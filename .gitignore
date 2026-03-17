@@ -43,3 +43,8 @@ Thumbs.db
 
 # Helm
 helm/**/*.tgz
+
+
+#custom 
+README_GITHUB_SETUP.md
+SETUP.md
