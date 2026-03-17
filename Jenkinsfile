@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    tools {
+        maven 'Maven3'
+    }
+    
     environment {
         CHART_DIR       = 'helm/recipe-detection-chart'
         IMAGE_NAME      = 'hpe-recipe-detection'
