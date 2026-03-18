@@ -1,45 +1,132 @@
 package com.hpe.recipe.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
+import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.client.KubernetesClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class HelmReleaseService {
 
-    private final List<HelmRelease> helmReleases;
+    private static final Logger log = LoggerFactory.getLogger(HelmReleaseService.class);
+    private static final String LABEL_APP_NAME = "app.kubernetes.io/name";
+    private static final String LABEL_APP_VERSION = "app.kubernetes.io/version";
+    private static final String ANNOTATION_RELEASE_NAME = "meta.helm.sh/release-name";
+    private static final String RECIPE_DATA_KEY = "recipe-data.json";
 
-    public HelmReleaseService() {
-        this.helmReleases = new ArrayList<>(buildHelmReleases());
+    private final KubernetesClient kubernetesClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public HelmReleaseService(KubernetesClient kubernetesClient) {
+        this.kubernetesClient = kubernetesClient;
+    }
+
+    private List<ConfigMap> fetchRecipeConfigMaps() {
+        return kubernetesClient.configMaps()
+                .inNamespace("default")
+                .withLabel(LABEL_APP_NAME, "recipe-detection")
+                .list()
+                .getItems();
+    }
+
+    private HelmRelease parseConfigMap(ConfigMap cm) {
+        try {
+            String json = cm.getData().get(RECIPE_DATA_KEY);
+            if (json == null || json.isBlank()) return null;
+
+            JsonNode root = objectMapper.readTree(json);
+            String chartVersion = root.get("chartVersion").asText();
+            String releaseName = cm.getMetadata().getAnnotations()
+                    .getOrDefault(ANNOTATION_RELEASE_NAME, "unknown");
+
+            List<Recipe> recipes = new ArrayList<>();
+            for (JsonNode rNode : root.get("recipes")) {
+                Map<String, String> components = new LinkedHashMap<>();
+                rNode.get("components").fields().forEachRemaining(
+                        e -> components.put(e.getKey(), e.getValue().asText()));
+
+                List<String> upgradePaths = new ArrayList<>();
+                rNode.get("upgradePaths").forEach(p -> upgradePaths.add(p.asText()));
+
+                recipes.add(new Recipe(
+                        rNode.get("version").asText(),
+                        rNode.has("description") ? rNode.get("description").asText() : "",
+                        components,
+                        upgradePaths
+                ));
+            }
+
+            return new HelmRelease(chartVersion, releaseName, "deployed", recipes);
+        } catch (Exception e) {
+            log.warn("Failed to parse ConfigMap {}: {}", cm.getMetadata().getName(), e.getMessage());
+            return null;
+        }
     }
 
     public List<HelmRelease> getAllHelmReleases() {
-        return helmReleases;
+        List<ConfigMap> configMaps = fetchRecipeConfigMaps();
+        // Deduplicate by chartVersion — keep the newest ConfigMap per version
+        Map<String, HelmRelease> byVersion = new LinkedHashMap<>();
+        for (ConfigMap cm : configMaps) {
+            HelmRelease release = parseConfigMap(cm);
+            if (release != null && !byVersion.containsKey(release.getVersion())) {
+                byVersion.put(release.getVersion(), release);
+            }
+        }
+        // Sort by version
+        return byVersion.values().stream()
+                .sorted(Comparator.comparing(HelmRelease::getVersion))
+                .collect(Collectors.toList());
     }
 
     public HelmRelease getHelmRelease(String version) {
-        return helmReleases.stream()
+        return getAllHelmReleases().stream()
                 .filter(h -> h.getVersion().equals(version))
                 .findFirst()
                 .orElse(null);
     }
 
     public HelmRelease createHelmRelease(HelmRelease release) {
-        // Don't allow duplicate versions
         if (getHelmRelease(release.getVersion()) != null) {
             return null;
         }
         if (release.getRecipes() == null) {
             release.setRecipes(new ArrayList<>());
-        } else {
-            release.setRecipes(new ArrayList<>(release.getRecipes()));
         }
         if (release.getStatus() == null || release.getStatus().isEmpty()) {
             release.setStatus("pending");
         }
-        helmReleases.add(release);
+
+        // Create a ConfigMap in K8s
+        try {
+            String json = buildRecipeJson(release);
+            ConfigMap cm = new io.fabric8.kubernetes.api.model.ConfigMapBuilder()
+                    .withNewMetadata()
+                        .withName("recipe-v" + release.getVersion().replace(".", "-") + "-config")
+                        .withNamespace("default")
+                        .addToLabels(LABEL_APP_NAME, "recipe-detection")
+                        .addToLabels(LABEL_APP_VERSION, release.getVersion())
+                        .addToLabels("app.kubernetes.io/managed-by", "recipe-detection-api")
+                        .addToAnnotations(ANNOTATION_RELEASE_NAME, release.getReleaseName() != null
+                                ? release.getReleaseName() : "recipe-v" + release.getVersion().replace(".", "-"))
+                    .endMetadata()
+                    .addToData("chart-version", release.getVersion())
+                    .addToData(RECIPE_DATA_KEY, json)
+                    .build();
+            kubernetesClient.configMaps().inNamespace("default").resource(cm).create();
+            log.info("Created ConfigMap for helm release {}", release.getVersion());
+        } catch (Exception e) {
+            log.error("Failed to create ConfigMap for release {}: {}", release.getVersion(), e.getMessage());
+            return null;
+        }
         return release;
     }
 
@@ -50,19 +137,29 @@ public class HelmReleaseService {
         if (updated.getReleaseName() != null) existing.setReleaseName(updated.getReleaseName());
         if (updated.getStatus() != null) existing.setStatus(updated.getStatus());
         if (updated.getRecipes() != null) existing.setRecipes(new ArrayList<>(updated.getRecipes()));
+
+        updateConfigMap(version, existing);
         return existing;
     }
 
     public boolean deleteHelmRelease(String version) {
-        return helmReleases.removeIf(h -> h.getVersion().equals(version));
+        List<ConfigMap> configMaps = fetchRecipeConfigMaps();
+        for (ConfigMap cm : configMaps) {
+            HelmRelease release = parseConfigMap(cm);
+            if (release != null && release.getVersion().equals(version)) {
+                kubernetesClient.configMaps().inNamespace("default")
+                        .withName(cm.getMetadata().getName()).delete();
+                log.info("Deleted ConfigMap {} for helm release {}", cm.getMetadata().getName(), version);
+                return true;
+            }
+        }
+        return false;
     }
 
-    // Recipe CRUD within a helm release
     public Recipe addRecipeToRelease(String helmVersion, Recipe recipe) {
         HelmRelease release = getHelmRelease(helmVersion);
         if (release == null) return null;
 
-        // Don't allow duplicate recipe versions within a release
         boolean exists = release.getRecipes().stream()
                 .anyMatch(r -> r.getVersion().equals(recipe.getVersion()));
         if (exists) return null;
@@ -70,6 +167,8 @@ public class HelmReleaseService {
         if (recipe.getComponents() == null) recipe.setComponents(new LinkedHashMap<>());
         if (recipe.getUpgradePaths() == null) recipe.setUpgradePaths(new ArrayList<>());
         release.getRecipes().add(recipe);
+
+        updateConfigMap(helmVersion, release);
         return recipe;
     }
 
@@ -85,20 +184,25 @@ public class HelmReleaseService {
         if (updated.getDescription() != null) existing.setDescription(updated.getDescription());
         if (updated.getComponents() != null) existing.setComponents(new LinkedHashMap<>(updated.getComponents()));
         if (updated.getUpgradePaths() != null) existing.setUpgradePaths(new ArrayList<>(updated.getUpgradePaths()));
+
+        updateConfigMap(helmVersion, release);
         return existing;
     }
 
     public boolean deleteRecipeFromRelease(String helmVersion, String recipeVersion) {
         HelmRelease release = getHelmRelease(helmVersion);
         if (release == null) return false;
-        return release.getRecipes().removeIf(r -> r.getVersion().equals(recipeVersion));
+
+        boolean removed = release.getRecipes().removeIf(r -> r.getVersion().equals(recipeVersion));
+        if (removed) {
+            updateConfigMap(helmVersion, release);
+        }
+        return removed;
     }
 
     public List<Recipe> getRecipesByHelmVersion(String version) {
         HelmRelease release = getHelmRelease(version);
-        if (release == null) {
-            return Collections.emptyList();
-        }
+        if (release == null) return Collections.emptyList();
         return release.getRecipes();
     }
 
@@ -171,40 +275,43 @@ public class HelmReleaseService {
         return result;
     }
 
-    private List<HelmRelease> buildHelmReleases() {
-        Recipe r130 = new Recipe("1.3.0", "HPE Ezmeral Runtime 1.3.0",
-                new LinkedHashMap<>(Map.of("spark", "3.1.2", "kafka", "3.1.0", "airflow", "2.3.0", "hbase", "2.4.6")),
-                new ArrayList<>());
+    private void updateConfigMap(String chartVersion, HelmRelease release) {
+        try {
+            List<ConfigMap> configMaps = fetchRecipeConfigMaps();
+            for (ConfigMap cm : configMaps) {
+                HelmRelease parsed = parseConfigMap(cm);
+                if (parsed != null && parsed.getVersion().equals(chartVersion)) {
+                    String json = buildRecipeJson(release);
+                    cm.getData().put(RECIPE_DATA_KEY, json);
+                    kubernetesClient.configMaps().inNamespace("default")
+                            .resource(cm).update();
+                    log.info("Updated ConfigMap {} for helm release {}", cm.getMetadata().getName(), chartVersion);
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to update ConfigMap for release {}: {}", chartVersion, e.getMessage());
+        }
+    }
 
-        Recipe r131 = new Recipe("1.3.1", "HPE Ezmeral Runtime 1.3.1",
-                new LinkedHashMap<>(Map.of("spark", "3.2.0", "kafka", "3.2.1", "airflow", "2.4.1", "hbase", "2.4.8")),
-                new ArrayList<>(List.of("1.3.0")));
-
-        HelmRelease v001 = new HelmRelease("0.0.1", "recipe-detection-v1", "deployed",
-                new ArrayList<>(List.of(r130, r131)));
-
-        Recipe r132 = new Recipe("1.3.2", "HPE Ezmeral Runtime 1.3.2",
-                new LinkedHashMap<>(Map.of("spark", "3.2.1", "kafka", "3.2.3", "airflow", "2.4.3", "hbase", "2.4.9")),
-                new ArrayList<>(List.of("1.3.1", "1.3.0")));
-
-        Recipe r140 = new Recipe("1.4.0", "HPE Ezmeral Runtime 1.4.0",
-                new LinkedHashMap<>(Map.of("spark", "3.3.0", "kafka", "3.3.2", "airflow", "2.5.3", "hbase", "2.5.4")),
-                new ArrayList<>(List.of("1.3.2", "1.3.1")));
-
-        HelmRelease v002 = new HelmRelease("0.0.2", "recipe-detection-v2", "deployed",
-                new ArrayList<>(List.of(r132, r140)));
-
-        Recipe r141 = new Recipe("1.4.1", "HPE Ezmeral Runtime 1.4.1",
-                new LinkedHashMap<>(Map.of("spark", "3.3.1", "kafka", "3.4.0", "airflow", "2.6.3", "hbase", "2.5.5")),
-                new ArrayList<>(List.of("1.4.0", "1.3.2")));
-
-        Recipe r150 = new Recipe("1.5.0", "HPE Ezmeral Runtime 1.5.0",
-                new LinkedHashMap<>(Map.of("spark", "3.4.0", "kafka", "3.5.0", "airflow", "2.7.0", "hbase", "2.6.0")),
-                new ArrayList<>(List.of("1.4.1", "1.4.0")));
-
-        HelmRelease v003 = new HelmRelease("0.0.3", "recipe-detection-v3", "deployed",
-                new ArrayList<>(List.of(r141, r150)));
-
-        return new ArrayList<>(List.of(v001, v002, v003));
+    private String buildRecipeJson(HelmRelease release) {
+        try {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("chartVersion", release.getVersion());
+            List<Map<String, Object>> recipeMaps = new ArrayList<>();
+            for (Recipe r : release.getRecipes()) {
+                Map<String, Object> rMap = new LinkedHashMap<>();
+                rMap.put("version", r.getVersion());
+                rMap.put("description", r.getDescription());
+                rMap.put("components", r.getComponents());
+                rMap.put("upgradePaths", r.getUpgradePaths());
+                recipeMaps.add(rMap);
+            }
+            data.put("recipes", recipeMaps);
+            return objectMapper.writeValueAsString(data);
+        } catch (Exception e) {
+            log.error("Failed to build recipe JSON: {}", e.getMessage());
+            return "{}";
+        }
     }
 }

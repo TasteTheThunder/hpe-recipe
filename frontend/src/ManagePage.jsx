@@ -395,10 +395,10 @@ function ReleaseCard({ release, onRefresh, onNotify }) {
           }}>▼</span>
         </div>
         <div style={{ display: 'flex', gap: 8, marginLeft: 12 }}>
-          {(release.status === 'pending' || release.status === 'push_failed') && (
+          {release.status !== 'deploying' && (
             <button onClick={handleDeploy} style={{
               ...btnPrimary, padding: '6px 14px', fontSize: 12,
-            }}>Deploy</button>
+            }}>{release.status === 'deployed' ? 'Redeploy' : 'Deploy'}</button>
           )}
           {release.status === 'deploying' && (
             <span style={{
