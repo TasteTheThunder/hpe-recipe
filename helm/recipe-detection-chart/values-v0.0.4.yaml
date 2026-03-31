@@ -1,12 +1,12 @@
 recipeData:
   chartVersion: 0.0.4
   recipes:
-  - version: 1.6.1
-    description: major release
+  - version: 1.0.2
+    description: HPE Ezmeral Runtime 1.0.2
     components:
-      spark: 3.5.1
-      kafka: 3.6.0
-      airflow: 2.8.2
-      hbase: 2.7.0
+      spark: 3.5.2
+      kafka: 4.7.3
+      airflow: 2.6.9
+      hbase: 1.2.3
     upgradePaths: [
       ]
