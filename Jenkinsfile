@@ -43,7 +43,7 @@ pipeline {
         stage('Build Backend') {
             steps {
                 dir('backend') {
-                    bat 'mvn clean package -DskipTests'
+                    sh 'mvn clean package -DskipTests'
                 }
             }
         }
@@ -51,7 +51,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    bat "minikube image build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                    sh "minikube image build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
                 }
             }
         }
@@ -62,13 +62,13 @@ pipeline {
                     def valuesArg = env.HAS_VERSION_VALUES == 'true'
                         ? "-f ${env.VALUES_FILE}" : ""
 
-                    def releaseExists = bat(
-                        script: "${HELM_CMD} status ${RELEASE_NAME} --namespace ${KUBE_NAMESPACE} 2>nul",
+                    def releaseExists = sh(
+                        script: "${HELM_CMD} status ${RELEASE_NAME} --namespace ${KUBE_NAMESPACE} 2>/dev/null",
                         returnStatus: true
                     ) == 0
 
                     if (releaseExists) {
-                        bat """
+                        sh """
                             ${HELM_CMD} upgrade ${RELEASE_NAME} ${CHART_DIR} \
                                 --namespace ${KUBE_NAMESPACE} \
                                 ${valuesArg} \
@@ -77,7 +77,7 @@ pipeline {
                         """
                         echo "Upgraded Helm release: ${RELEASE_NAME}"
                     } else {
-                        bat """
+                        sh """
                             ${HELM_CMD} install ${RELEASE_NAME} ${CHART_DIR} \
                                 --namespace ${KUBE_NAMESPACE} \
                                 ${valuesArg} \
@@ -93,11 +93,11 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 script {
-                    bat "kubectl rollout status deployment/${RELEASE_NAME}-recipe-detection --namespace ${KUBE_NAMESPACE} --timeout=120s"
+                    sh "kubectl rollout status deployment/${RELEASE_NAME}-recipe-detection --namespace ${KUBE_NAMESPACE} --timeout=120s"
 
-                    bat "${HELM_CMD} list --namespace ${KUBE_NAMESPACE}"
-                    bat "kubectl get pods --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
-                    bat "kubectl get configmaps --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
+                    sh "${HELM_CMD} list --namespace ${KUBE_NAMESPACE}"
+                    sh "kubectl get pods --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
+                    sh "kubectl get configmaps --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
                 }
             }
         }
@@ -105,10 +105,10 @@ pipeline {
         stage('Update Release Status') {
             steps {
                 script {
-                    bat """
-                        curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status ^
-                            -H "Content-Type: application/json" ^
-                            -d "{\\"status\\":\\"deployed\\"}"
+                    sh """
+                    curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status \
+                    -H "Content-Type: application/json" \
+                    -d '{"status":"deployed"}'
                     """
                     echo "Updated release ${env.CHART_VERSION} status to deployed"
                 }
@@ -122,10 +122,10 @@ pipeline {
         }
         failure {
             script {
-                bat """
-                    curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status ^
-                        -H "Content-Type: application/json" ^
-                        -d "{\\"status\\":\\"failed\\"}" 2>nul
+                sh """
+                    curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status \
+                        -H "Content-Type: application/json" \
+                        -d '{"status":"failed"}' 2>/dev/null
                 """
             }
             echo "Deployment failed for chart version ${env.CHART_VERSION}"
