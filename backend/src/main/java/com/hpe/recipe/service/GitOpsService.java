@@ -43,41 +43,50 @@ public class GitOpsService {
      * Also updates Chart.yaml version so Jenkins picks up the right version.
      */
     public synchronized void generateAndPush(HelmRelease release) throws Exception {
+
+        System.out.println("🚀 Starting GitOps for version: " + release.getVersion());
+
         File repoDir = new File(localPath);
         Git git = getOrCloneRepo(repoDir);
 
         try {
-            // Pull latest
+            System.out.println("📥 Pulling latest code...");
             git.pull()
-                .setCredentialsProvider(getCredentials())
-                .setRemoteBranchName(branch)
-                .call();
+                    .setCredentialsProvider(getCredentials())
+                    .setRemoteBranchName(branch)
+                    .call();
 
-            // Generate values file
+            System.out.println("📄 Generating YAML...");
             String valuesYaml = generateValuesYaml(release);
             String valuesFileName = "values-v" + release.getVersion() + ".yaml";
             File valuesFile = new File(repoDir, valuesDir + "/" + valuesFileName);
             writeFile(valuesFile, valuesYaml);
 
-            // Update Chart.yaml version
+            System.out.println("📝 Updating Chart.yaml...");
             File chartFile = new File(repoDir, valuesDir + "/Chart.yaml");
             updateChartVersion(chartFile, release.getVersion());
 
-            // Stage, commit, push
+            System.out.println("➕ Adding files to git...");
             git.add().addFilepattern(valuesDir + "/" + valuesFileName).call();
             git.add().addFilepattern(valuesDir + "/Chart.yaml").call();
 
+            System.out.println("💾 Committing changes...");
             git.commit()
-                .setMessage("Release v" + release.getVersion() + ": update recipe values\n\n"
-                    + "Recipes: " + release.getRecipes().size() + " recipe(s)\n"
-                    + "Triggered from Recipe Detection UI")
-                .setAuthor("Recipe Detection", "recipe-detection@hpe.com")
-                .call();
+                    .setMessage("Release v" + release.getVersion())
+                    .setAuthor("Recipe Detection", "recipe-detection@hpe.com")
+                    .call();
 
+            System.out.println("📤 Pushing to GitHub...");
             git.push()
-                .setCredentialsProvider(getCredentials())
-                .call();
+                    .setCredentialsProvider(getCredentials())
+                    .call();
 
+            System.out.println("✅ PUSH SUCCESS");
+
+        } catch (Exception e) {
+            System.out.println("❌ GIT ERROR: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
         } finally {
             git.close();
         }

@@ -81,6 +81,7 @@ public class HelmReleaseController {
 
     @PostMapping("/{version}/deploy")
     public ResponseEntity<?> deployRelease(@PathVariable String version) {
+        System.out.println("🔥 DEPLOY API CALLED for version: " + version);
         HelmRelease release = helmReleaseService.getHelmRelease(version);
         if (release == null) return ResponseEntity.notFound().build();
         if (release.getRecipes() == null || release.getRecipes().isEmpty()) {
