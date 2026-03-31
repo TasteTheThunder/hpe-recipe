@@ -1,23 +1,12 @@
 recipeData:
-  chartVersion: "0.0.2"
+  chartVersion: 0.0.2
   recipes:
-    - version: "1.4.0"
-      description: "Feature release with upgraded analytics stack"
-      components:
-        spark: "3.3.0"
-        kafka: "3.3.2"
-        airflow: "2.5.3"
-        hbase: "2.5.4"
-      upgradePaths:
-        - "1.3.2"
-        - "1.3.1"
-    - version: "1.3.2"
-      description: "Maintenance release with stability improvements"
-      components:
-        spark: "3.2.1"
-        kafka: "3.2.3"
-        airflow: "2.4.3"
-        hbase: "2.4.9"
-      upgradePaths:
-        - "1.3.1"
-        - "1.3.0"
+  - version: 1.0.0
+    description: anything
+    components:
+      spark: 3.5.0
+      kafka: 3.6.0
+      airflow: 2.8.0
+      hbase: 2.7.0
+    upgradePaths: [
+      ]
