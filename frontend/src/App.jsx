@@ -79,41 +79,49 @@ function RecipeNode({ data }) {
   const sel = data.isSelected;
   return (
     <div style={{
-      background: sel ? T.teal : T.bgCard,
-      border: `2px solid ${sel ? T.teal : T.border}`,
-      borderRadius: 12,
-      padding: '14px 20px',
-      minWidth: 200,
+      background: sel ? `linear-gradient(135deg, ${T.teal}, ${T.tealDark})` : T.bgCard,
+      border: `2px solid ${sel ? T.white + '44' : T.border}`,
+      borderRadius: 16,
+      padding: '16px 24px',
+      minWidth: 220,
       cursor: 'pointer',
-      boxShadow: sel ? `0 0 20px ${T.teal}66, 0 0 40px ${T.teal}22` : '0 4px 12px rgba(0,0,0,0.3)',
-      transition: 'all 0.25s ease',
+      backdropFilter: 'blur(10px)',
+      boxShadow: sel 
+        ? `0 0 30px ${T.teal}88, 0 0 60px ${T.teal}33, inset 0 0 10px rgba(255,255,255,0.2)` 
+        : '0 8px 32px rgba(0,0,0,0.4)',
+      transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+      transform: sel ? 'scale(1.05)' : 'scale(1)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{
-          width: 28, height: 28, borderRadius: 8,
-          background: sel ? 'rgba(255,255,255,0.2)' : T.bgSurface,
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 10,
+          background: sel ? 'rgba(255,255,255,0.25)' : T.bgSurface,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14,
-        }}>📋</span>
-        <span style={{
-          fontWeight: 700, fontSize: 15,
+          fontSize: 16, boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+        }}>📋</div>
+        <div style={{
+          fontWeight: 800, fontSize: 16,
           color: sel ? T.white : T.teal,
-          letterSpacing: 0.3,
-        }}>v{data.version}</span>
+          letterSpacing: 0.5,
+        }}>v{data.version}</div>
       </div>
       <div style={{
-        fontSize: 11, color: sel ? 'rgba(255,255,255,0.8)' : T.textMuted,
-        lineHeight: 1.4,
+        fontSize: 12, color: sel ? 'rgba(255,255,255,0.9)' : T.textMuted,
+        lineHeight: 1.5, fontWeight: 400,
       }}>{data.description}</div>
+      
       {sel && (
         <div style={{
-          marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.6)',
-          display: 'flex', alignItems: 'center', gap: 4,
+          marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.1)',
+          fontSize: 10, color: 'rgba(255,255,255,0.7)',
+          display: 'flex', alignItems: 'center', gap: 6,
+          textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.white, display: 'inline-block' }} />
-          Components expanded
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.white, display: 'inline-block', animation: 'pulse 1.5s infinite' }} />
+          Active Recipe
         </div>
       )}
+      <style>{`@keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }`}</style>
     </div>
   );
 }
@@ -122,20 +130,26 @@ function ComponentNode({ data }) {
   const theme = data.theme;
   return (
     <div style={{
-      background: theme.bg,
-      border: `1.5px solid ${theme.border}`,
-      borderRadius: 10,
-      padding: '10px 16px',
-      minWidth: 160,
-      boxShadow: `0 2px 8px rgba(0,0,0,0.2)`,
-      transition: 'all 0.2s ease',
+      background: `linear-gradient(135deg, ${theme.bg}, ${theme.bg}dd)`,
+      border: `1.5px solid ${theme.border}88`,
+      borderRadius: 12,
+      padding: '12px 18px',
+      minWidth: 170,
+      boxShadow: `0 4px 15px rgba(0,0,0,0.3), 0 0 10px ${theme.border}22`,
+      transition: 'all 0.3s ease',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 16 }}>{theme.icon}</span>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 13, color: theme.color, textTransform: 'capitalize' }}>{data.name}</div>
-          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>v{data.version}</div>
-        </div>
+      <div style={{
+        width: 36, height: 36, borderRadius: '50%',
+        background: `${theme.color}15`, border: `1px solid ${theme.border}44`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 18,
+      }}>{theme.icon}</div>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 13, color: theme.color, textTransform: 'capitalize', letterSpacing: 0.2 }}>{data.name}</div>
+        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, fontWeight: 500 }}>v{data.version}</div>
       </div>
     </div>
   );
@@ -171,13 +185,13 @@ function buildGraph(recipes, selectedRecipeVersion) {
           target: `recipe-${recipe.version}`,
           type: 'smoothstep',
           animated: true,
-          label: 'upgrade',
-          labelStyle: { fontSize: 10, fill: T.textMuted, fontWeight: 500 },
-          labelBgStyle: { fill: T.bg, fillOpacity: 0.8 },
-          labelBgPadding: [6, 3],
-          labelBgBorderRadius: 4,
-          style: { stroke: T.teal, strokeWidth: 2, strokeDasharray: '8 4' },
-          markerEnd: { type: MarkerType.ArrowClosed, color: T.teal, width: 16, height: 16 },
+          label: 'upgrades to',
+          labelStyle: { fontSize: 10, fill: T.white, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 },
+          labelBgStyle: { fill: T.teal, fillOpacity: 0.9 },
+          labelBgPadding: [10, 5],
+          labelBgBorderRadius: 6,
+          style: { stroke: T.teal, strokeWidth: 4, opacity: 0.8 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: T.teal, width: 28, height: 28 },
         });
       }
     });
@@ -255,15 +269,17 @@ function VersionTimeline({ releases, selected, onSelect }) {
 // ============================================================================
 // Detail Panel
 // ============================================================================
-function DetailPanel({ recipe, helmVersion, onClose }) {
+function DetailPanel({ recipe, helmVersion, allRecipes, onClose }) {
   if (!recipe) return null;
   const comps = recipe.components ? Object.entries(recipe.components) : [];
-  const paths = recipe.upgradePaths || [];
+  const fromPaths = recipe.upgradePaths || [];
+  const toPaths = allRecipes.filter((r) => r.upgradePaths?.includes(recipe.version)).map((r) => r.version);
 
   return (
     <div style={{
       width: 340, background: T.bgCard, borderLeft: `1px solid ${T.border}`,
       display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
+      boxShadow: '-10px 0 30px rgba(0,0,0,0.3)',
     }}>
       {/* Panel header */}
       <div style={{
@@ -301,60 +317,114 @@ function DetailPanel({ recipe, helmVersion, onClose }) {
         <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
           Components ({comps.length})
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
           {comps.map(([name, ver], i) => {
             const theme = getCompTheme(name, i);
+            
+            // Find unique previous versions for this component
+            const prevVers = fromPaths.map(pv => {
+              const pr = allRecipes.find(r => r.version === pv);
+              return pr?.components?.[name];
+            }).filter(v => v && v !== ver);
+            const uniquePrev = [...new Set(prevVers)];
+
+            // Find unique next versions
+            const nextVers = toPaths.map(tv => {
+              const tr = allRecipes.find(r => r.version === tv);
+              return tr?.components?.[name];
+            }).filter(v => v && v !== ver);
+            const uniqueNext = [...new Set(nextVers)];
+
             return (
               <div key={name} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 background: T.bgSurface, border: `1px solid ${T.border}`,
-                borderRadius: 8, padding: '10px 14px',
+                borderRadius: 10, padding: '10px 14px',
                 borderLeft: `3px solid ${theme.border}`,
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14 }}>{theme.icon}</span>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: T.text, textTransform: 'capitalize' }}>{name}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>{theme.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, textTransform: 'capitalize' }}>{name}</div>
+                    {(uniquePrev.length > 0 || uniqueNext.length > 0) && (
+                      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>
+                        {uniquePrev.length > 0 && <span>{uniquePrev.join(', ')} → </span>}
+                        <span style={{ color: theme.color, fontWeight: 700 }}>{ver}</span>
+                        {uniqueNext.length > 0 && <span> → {uniqueNext.join(', ')}</span>}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <span style={{
-                  fontSize: 12, fontWeight: 600, color: theme.color,
-                  background: theme.bg, padding: '2px 8px', borderRadius: 4,
-                }}>{ver}</span>
+                {(!uniquePrev.length && !uniqueNext.length) && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, color: theme.color,
+                    background: theme.bg, padding: '2px 8px', borderRadius: 4,
+                  }}>{ver}</span>
+                )}
               </div>
             );
           })}
         </div>
 
-        {/* Upgrade Paths */}
+        {/* Upgrade Paths (From) */}
         <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-          Upgrade Paths
+          Upgrade From
         </div>
-        {paths.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {paths.map((p) => (
-              <div key={p} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                background: T.bgSurface, border: `1px solid ${T.border}`,
-                borderRadius: 8, padding: '8px 14px', fontSize: 13,
-              }}>
-                <span style={{
-                  padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
-                  background: 'rgba(88,166,255,0.1)', color: T.blue,
-                }}>{p}</span>
-                <span style={{ color: T.teal, fontSize: 16 }}>→</span>
-                <span style={{
-                  padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
-                  background: `${T.teal}18`, color: T.teal,
-                }}>{recipe.version}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{
-            padding: '12px 14px', borderRadius: 8,
-            background: T.bgSurface, border: `1px solid ${T.border}`,
-            fontSize: 12, color: T.textMuted, textAlign: 'center',
-          }}>Base version — no upgrade paths</div>
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
+          {fromPaths.length > 0 ? fromPaths.map((p) => (
+            <div key={p} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: T.bgSurface, border: `1px solid ${T.border}`,
+              borderRadius: 8, padding: '8px 14px', fontSize: 13,
+            }}>
+              <span style={{
+                padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                background: 'rgba(88,166,255,0.1)', color: T.blue,
+              }}>v{p}</span>
+              <span style={{ color: T.teal, fontSize: 14 }}>→</span>
+              <span style={{
+                padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                background: `${T.teal}18`, color: T.teal,
+              }}>v{recipe.version}</span>
+            </div>
+          )) : (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: T.bgSurface, border: `1px solid ${T.border}`,
+              fontSize: 12, color: T.textMuted, textAlign: 'center', borderStyle: 'dashed'
+            }}>No upgrade source</div>
+          )}
+        </div>
+
+        {/* Upgrade Paths (To) */}
+        <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          Upgrade To
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {toPaths.length > 0 ? toPaths.map((p) => (
+            <div key={p} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: T.bgSurface, border: `1px solid ${T.border}`,
+              borderRadius: 8, padding: '8px 14px', fontSize: 13,
+            }}>
+              <span style={{
+                padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                background: `${T.teal}18`, color: T.teal,
+              }}>v{recipe.version}</span>
+              <span style={{ color: T.teal, fontSize: 14 }}>→</span>
+              <span style={{
+                padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                background: 'rgba(210,153,34,0.1)', color: T.yellow,
+              }}>v{p}</span>
+            </div>
+          )) : (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: T.bgSurface, border: `1px solid ${T.border}`,
+              fontSize: 12, color: T.textMuted, textAlign: 'center', borderStyle: 'dashed'
+            }}>Latest version</div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -688,6 +758,7 @@ export default function App() {
           <DetailPanel
             recipe={selectedRecipeObj}
             helmVersion={selectedVersion}
+            allRecipes={releaseDetail.recipes || []}
             onClose={() => setSelectedRecipeVersion(null)}
           />
         )}

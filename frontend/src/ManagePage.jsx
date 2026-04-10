@@ -471,30 +471,64 @@ function ReleaseCard({ release, onRefresh, onNotify }) {
 
                   {/* Components grid */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                    {Object.entries(recipe.components || {}).map(([name, ver]) => (
-                      <div key={name} style={{
-                        padding: '6px 12px', borderRadius: 6,
-                        background: T.bgCard, border: `1px solid ${T.border}`,
-                        fontSize: 12,
-                      }}>
-                        <span style={{ color: T.textMuted, textTransform: 'capitalize' }}>{name}</span>
-                        <span style={{ color: T.teal, fontWeight: 600, marginLeft: 6 }}>{ver}</span>
-                      </div>
-                    ))}
+                    {Object.entries(recipe.components || {}).map(([name, ver]) => {
+                      const fromPaths = recipe.upgradePaths || [];
+                      const toPaths = recipes.filter(r => r.upgradePaths?.includes(recipe.version)).map(r => r.version);
+                      
+                      const prevVers = fromPaths.map(pv => {
+                        const pr = recipes.find(r => r.version === pv);
+                        return pr?.components?.[name];
+                      }).filter(v => v && v !== ver);
+                      const uniquePrev = [...new Set(prevVers)];
+
+                      const nextVers = toPaths.map(tv => {
+                        const tr = recipes.find(r => r.version === tv);
+                        return tr?.components?.[name];
+                      }).filter(v => v && v !== ver);
+                      const uniqueNext = [...new Set(nextVers)];
+
+                      return (
+                        <div key={name} style={{
+                          padding: '6px 12px', borderRadius: 6,
+                          background: T.bgCard, border: `1px solid ${T.border}`,
+                          fontSize: 12,
+                        }}>
+                          <span style={{ color: T.textMuted, textTransform: 'capitalize' }}>{name}</span>
+                          <span style={{ color: T.teal, fontWeight: 600, marginLeft: 6 }}>
+                            {uniquePrev.length > 0 && <span style={{ color: T.textMuted, fontWeight: 400 }}>{uniquePrev.join(', ')} → </span>}
+                            {ver}
+                            {uniqueNext.length > 0 && <span style={{ color: T.textMuted, fontWeight: 400 }}> → {uniqueNext.join(', ')}</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/* Upgrade paths */}
-                  {recipe.upgradePaths?.length > 0 && (
-                    <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, color: T.textMuted }}>Upgrades from:</span>
-                      {recipe.upgradePaths.map((p) => (
-                        <span key={p} style={{
-                          padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
-                          background: `${T.blue}15`, color: T.blue,
-                        }}>v{p}</span>
-                      ))}
-                    </div>
-                  )}
+                  {/* Upgrade paths info */}
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {recipe.upgradePaths?.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: T.textMuted }}>Upgrades from:</span>
+                        {recipe.upgradePaths.map((p) => (
+                          <span key={p} style={{
+                            padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                            background: `${T.blue}15`, color: T.blue,
+                          }}>v{p}</span>
+                        ))}
+                      </div>
+                    )}
+                    {recipes.filter(r => r.upgradePaths?.includes(recipe.version)).length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: T.textMuted }}>Upgrades to:</span>
+                        {recipes.filter(r => r.upgradePaths?.includes(recipe.version)).map((p) => (
+                          <span key={p.version} style={{
+                            padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                            background: `${T.yellow}15`, color: T.yellow,
+                          }}>v{p.version}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
