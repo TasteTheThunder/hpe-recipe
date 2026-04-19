@@ -20,3 +20,10 @@ gitops:
   username: ${GIT_USERNAME:TasteTheThunder}
   token: ${GIT_TOKEN:}
   values-dir: helm/recipe-detection-chart
+
+kubernetes:
+  clusters:
+    dev:
+      context: dev
+    prod:
+      context: prod

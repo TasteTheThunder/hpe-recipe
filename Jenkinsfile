@@ -1,22 +1,31 @@
 pipeline {
     agent any
 
-    tools {
-        maven 'Maven3'
+    parameters {
+        choice(name: 'CLUSTER', choices: ['dev', 'prod'], description: 'Select target cluster')
     }
 
     environment {
         CHART_DIR       = 'helm/recipe-detection-chart'
-        IMAGE_NAME      = 'hpe-recipe-detection'
         HELM_CMD        = 'helm'
         KUBE_NAMESPACE  = 'default'
         API_URL         = 'http://localhost:8081/api'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Set Kubernetes Context') {
+            steps {
+                script {
+                    sh "kubectl config use-context ${params.CLUSTER}"
+                    echo "Using cluster: ${params.CLUSTER}"
+                }
             }
         }
 
@@ -25,41 +34,20 @@ pipeline {
                 script {
                     def chartYaml = readFile("${CHART_DIR}/Chart.yaml")
                     def versionLine = chartYaml.readLines().find { it.startsWith('version:') }
-                    env.CHART_VERSION = versionLine.split(':')[1].trim()
-                    env.IMAGE_TAG = env.CHART_VERSION
-                    env.RELEASE_NAME = "recipe-v${env.CHART_VERSION.replace('.', '-')}"
 
-                    // Check for per-version values file
+                    env.CHART_VERSION = versionLine.split(':')[1].trim()
+                    env.RELEASE_NAME = "recipe-${params.CLUSTER}-v${env.CHART_VERSION.replace('.', '-')}"
+
                     env.VALUES_FILE = "${CHART_DIR}/values-v${env.CHART_VERSION}.yaml"
                     env.HAS_VERSION_VALUES = fileExists(env.VALUES_FILE) ? 'true' : 'false'
 
                     echo "Chart Version: ${env.CHART_VERSION}"
                     echo "Release Name: ${env.RELEASE_NAME}"
-                    echo "Values file: ${env.VALUES_FILE} (exists: ${env.HAS_VERSION_VALUES})"
                 }
             }
         }
 
-        stage('Build Backend') {
-            steps {
-                dir('backend') {
-                    sh 'mvn clean package -DskipTests'
-                }
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    sh '''
-                    eval $(minikube docker-env)
-                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                    '''
-                }
-            }
-        }
-
-        stage('Deploy to Minikube') {
+        stage('Deploy Helm (Config Only)') {
             steps {
                 script {
                     def valuesArg = env.HAS_VERSION_VALUES == 'true'
@@ -74,18 +62,14 @@ pipeline {
                         sh """
                             ${HELM_CMD} upgrade ${RELEASE_NAME} ${CHART_DIR} \
                                 --namespace ${KUBE_NAMESPACE} \
-                                ${valuesArg} \
-                                --set image.tag=${IMAGE_TAG} \
-                                --set image.pullPolicy=Never
+                                ${valuesArg}
                         """
                         echo "Upgraded Helm release: ${RELEASE_NAME}"
                     } else {
                         sh """
                             ${HELM_CMD} install ${RELEASE_NAME} ${CHART_DIR} \
                                 --namespace ${KUBE_NAMESPACE} \
-                                ${valuesArg} \
-                                --set image.tag=${IMAGE_TAG} \
-                                --set image.pullPolicy=Never
+                                ${valuesArg}
                         """
                         echo "Installed new Helm release: ${RELEASE_NAME}"
                     }
@@ -93,27 +77,23 @@ pipeline {
             }
         }
 
-        stage('Verify Deployment') {
+        stage('Verify ConfigMap') {
             steps {
                 script {
-                    sh "kubectl rollout status deployment/${RELEASE_NAME}-recipe-detection --namespace ${KUBE_NAMESPACE} --timeout=120s"
-
                     sh "${HELM_CMD} list --namespace ${KUBE_NAMESPACE}"
-                    sh "kubectl get pods --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
                     sh "kubectl get configmaps --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
                 }
             }
         }
 
-        stage('Update Release Status') {
+        stage('Update Backend Status') {
             steps {
                 script {
                     sh """
-                    curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status \
+                    curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status?cluster=${params.CLUSTER} \
                     -H "Content-Type: application/json" \
                     -d '{"status":"deployed"}'
                     """
-                    echo "Updated release ${env.CHART_VERSION} status to deployed"
                 }
             }
         }
@@ -121,17 +101,16 @@ pipeline {
 
     post {
         success {
-            echo "Successfully deployed chart version ${env.CHART_VERSION} as release ${env.RELEASE_NAME}"
+            echo "Successfully deployed ${env.RELEASE_NAME} to ${params.CLUSTER}"
         }
         failure {
             script {
                 sh """
-                    curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status \
-                        -H "Content-Type: application/json" \
-                        -d '{"status":"failed"}' 2>/dev/null
+                curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status?cluster=${params.CLUSTER} \
+                -H "Content-Type: application/json" \
+                -d '{"status":"failed"}' 2>/dev/null
                 """
             }
-            echo "Deployment failed for chart version ${env.CHART_VERSION}"
         }
         always {
             cleanWs()
