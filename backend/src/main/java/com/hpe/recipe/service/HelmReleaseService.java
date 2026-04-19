@@ -59,6 +59,7 @@ public class HelmReleaseService {
             String version = root.get("chartVersion").asText();
             String releaseName = cm.getMetadata().getAnnotations()
                     .getOrDefault(ANNOTATION_RELEASE_NAME, "unknown");
+                String status = root.has("status") ? root.get("status").asText() : "deployed";
 
             List<Recipe> recipes = new ArrayList<>();
 
@@ -79,7 +80,7 @@ public class HelmReleaseService {
                 ));
             }
 
-            return new HelmRelease(version, releaseName, "deployed", cluster, recipes);
+            return new HelmRelease(version, releaseName, status, cluster, recipes);
 
         } catch (Exception e) {
             log.warn("Parse error: {}", e.getMessage());
@@ -303,6 +304,7 @@ public class HelmReleaseService {
         try {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("chartVersion", release.getVersion());
+            data.put("status", release.getStatus());
 
             List<Map<String, Object>> recipes = new ArrayList<>();
 

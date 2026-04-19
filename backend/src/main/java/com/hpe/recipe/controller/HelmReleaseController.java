@@ -159,6 +159,7 @@ public class HelmReleaseController {
         }
 
         release.setStatus("deploying");
+        helmReleaseService.updateHelmRelease(cluster, version, release);
 
         wsHandler.broadcast("status_changed",
                 Map.of("version", version, "status", "deploying", "cluster", cluster));
@@ -177,6 +178,7 @@ public class HelmReleaseController {
         } catch (Exception e) {
 
             release.setStatus("push_failed");
+            helmReleaseService.updateHelmRelease(cluster, version, release);
 
             wsHandler.broadcast("status_changed",
                     Map.of("version", version, "status", "push_failed", "cluster", cluster));
