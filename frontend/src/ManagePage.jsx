@@ -48,6 +48,22 @@ const labelStyle = {
   textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6, display: 'block',
 };
 
+function normalizeRecipeDescription(text, fallbackVersion) {
+  const cleaned = String(text || '').replace(/^\s*description\s*:\s*/i, '').trim();
+  if (cleaned) return cleaned;
+  return `HPE Ezmeral Runtime ${fallbackVersion}`;
+}
+
+function getEffectiveUpgradePaths(recipes, recipe, recipeIndex) {
+  const explicit = Array.isArray(recipe.upgradePaths) ? recipe.upgradePaths.filter(Boolean) : [];
+  if (explicit.length > 0) return explicit;
+  if (recipeIndex > 0) {
+    const prevVersion = recipes[recipeIndex - 1]?.version;
+    if (prevVersion) return [prevVersion];
+  }
+  return [];
+}
+
 // ============================================================================
 // Toast notification
 // ============================================================================
@@ -78,16 +94,134 @@ function Toast({ message, type, onClose }) {
 function CreateReleaseForm({ cluster, onCreated }) {
   const [version, setVersion] = useState('');
   const [releaseName, setReleaseName] = useState('');
+  const [draftRecipes, setDraftRecipes] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [expandedRecipeIds, setExpandedRecipeIds] = useState([]);
+
+  const createEmptyRecipe = () => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    version: '',
+    description: '',
+    components: [
+      { name: 'spark', version: '' },
+      { name: 'kafka', version: '' },
+      { name: 'airflow', version: '' },
+      { name: 'hbase', version: '' },
+    ],
+    upgradePaths: [],
+  });
 
   // Auto-generate release name from version
   const autoReleaseName = version.trim()
     ? `recipe-detection-v${version.trim().replace(/\./g, '-')}`
     : '';
 
+  useEffect(() => {
+    if (draftRecipes.length === 0) {
+      setDraftRecipes([createEmptyRecipe()]);
+    }
+  }, [draftRecipes.length]);
+
+  const addRecipeDraft = () => {
+    const recipe = createEmptyRecipe();
+    setDraftRecipes((prev) => [...prev, recipe]);
+    setExpandedRecipeIds((prev) => [...prev, recipe.id]);
+  };
+
+  const removeRecipeDraft = (id) => {
+    setDraftRecipes((prev) => prev.filter((r) => r.id !== id));
+    setExpandedRecipeIds((prev) => prev.filter((rid) => rid !== id));
+  };
+
+  const toggleRecipeDraftExpanded = (id) => {
+    setExpandedRecipeIds((prev) => (
+      prev.includes(id) ? prev.filter((rid) => rid !== id) : [...prev, id]
+    ));
+  };
+
+  const updateRecipeDraft = (id, field, value) => {
+    setDraftRecipes((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  };
+
+  const updateDraftComponent = (recipeId, index, field, value) => {
+    setDraftRecipes((prev) => prev.map((r) => {
+      if (r.id !== recipeId) return r;
+      const next = [...r.components];
+      next[index] = { ...next[index], [field]: value };
+      return { ...r, components: next };
+    }));
+  };
+
+  const addDraftComponent = (recipeId) => {
+    setDraftRecipes((prev) => prev.map((r) => (
+      r.id === recipeId ? { ...r, components: [...r.components, { name: '', version: '' }] } : r
+    )));
+  };
+
+  const removeDraftComponent = (recipeId, index) => {
+    setDraftRecipes((prev) => prev.map((r) => {
+      if (r.id !== recipeId) return r;
+      return { ...r, components: r.components.filter((_, i) => i !== index) };
+    }));
+  };
+
+  const toggleDraftUpgradePath = (recipeId, fromVersion) => {
+    setDraftRecipes((prev) => prev.map((r) => {
+      if (r.id !== recipeId) return r;
+      const exists = r.upgradePaths.includes(fromVersion);
+      return {
+        ...r,
+        upgradePaths: exists ? r.upgradePaths.filter((v) => v !== fromVersion) : [...r.upgradePaths, fromVersion],
+      };
+    }));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!version.trim()) return;
+
+    const typedDrafts = draftRecipes.filter((r) => r.version.trim());
+    if (typedDrafts.length === 0) {
+      onCreated('At least one recipe is required', true);
+      return;
+    }
+
+    const draftVersions = typedDrafts.map((r) => r.version.trim());
+    const duplicateVersion = draftVersions.find((v, i) => draftVersions.indexOf(v) !== i);
+
+    if (duplicateVersion) {
+      onCreated(`Duplicate recipe version in draft: ${duplicateVersion}`, true);
+      return;
+    }
+
+    const recipesPayload = [];
+    for (let idx = 0; idx < typedDrafts.length; idx += 1) {
+      const recipe = typedDrafts[idx];
+      const compMap = {};
+      recipe.components.forEach((c) => {
+        if (c.name.trim() && c.version.trim()) {
+          compMap[c.name.trim()] = c.version.trim();
+        }
+      });
+
+      if (Object.keys(compMap).length === 0) {
+        onCreated(`Recipe ${recipe.version.trim()} must have at least one component`, true);
+        return;
+      }
+
+      const explicitUpgradePaths = recipe.upgradePaths.filter((p) => Boolean(p) && p !== recipe.version.trim());
+      const validUpgradePaths = explicitUpgradePaths.length > 0
+        ? explicitUpgradePaths
+        : (idx > 0 ? [typedDrafts[idx - 1].version.trim()] : []);
+
+      recipesPayload.push({
+        version: recipe.version.trim(),
+        description: normalizeRecipeDescription(recipe.description, recipe.version.trim()),
+        components: compMap,
+        upgradePaths: validUpgradePaths,
+      });
+    }
+
     setSubmitting(true);
     fetch(`${API_BASE}/helm-releases?cluster=${cluster}`, {
       method: 'POST',
@@ -95,6 +229,8 @@ function CreateReleaseForm({ cluster, onCreated }) {
       body: JSON.stringify({
         version: version.trim(),
         releaseName: releaseName.trim() || autoReleaseName,
+        status: 'pending',
+        recipes: recipesPayload,
       }),
     })
       .then((r) => {
@@ -104,7 +240,9 @@ function CreateReleaseForm({ cluster, onCreated }) {
       })
       .then(() => {
         setVersion(''); setReleaseName('');
-        onCreated('Helm release created — status will update after Jenkins deployment');
+        setDraftRecipes([]);
+        setExpandedRecipeIds([]);
+        onCreated(`Helm release created with ${recipesPayload.length} recipe${recipesPayload.length > 1 ? 's' : ''}`);
       })
       .catch((err) => onCreated(err.message, true))
       .finally(() => setSubmitting(false));
@@ -141,6 +279,165 @@ function CreateReleaseForm({ cluster, onCreated }) {
           Status is set automatically — "pending" on creation, "deployed" after Jenkins/Helm deploys successfully
         </div>
       </div>
+
+      <div style={{
+        borderRadius: 10,
+        padding: 14,
+        marginBottom: 16,
+        border: `1px solid ${T.blue}55`,
+        background: `${T.blue}10`,
+      }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.blue }}>
+                  Recipes
+            </div>
+            <button type="button" onClick={addRecipeDraft} style={{ ...btnSecondary, fontSize: 11, padding: '6px 12px' }}>
+              + Add Recipe
+            </button>
+          </div>
+
+          <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>
+                Add at least one recipe version with components. Upgrade paths are optional.
+          </div>
+
+              {draftRecipes.length === 0 && (
+                <div style={{
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: T.textMuted,
+                  border: `1px dashed ${T.border}`,
+                  background: T.bgCard,
+                  marginBottom: 8,
+                }}>
+                  No recipes added yet. Click + Add Recipe.
+                </div>
+              )}
+
+          {draftRecipes.map((recipe, recipeIndex) => {
+            const upgradeCandidates = draftRecipes
+              .slice(0, recipeIndex)
+              .filter((r) => r.version.trim())
+              .map((r) => r.version.trim());
+                const isExpanded = expandedRecipeIds.includes(recipe.id);
+
+            return (
+              <div key={recipe.id} style={{
+                background: T.bgCard,
+                border: `1px solid ${T.border}`,
+                borderLeft: `3px solid ${T.blue}`,
+                borderRadius: 10,
+                padding: 12,
+                marginBottom: 10,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleRecipeDraftExpanded(recipe.id)}
+                        style={{
+                          ...btnSecondary,
+                          fontSize: 12,
+                          padding: '4px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                        }}
+                      >
+                        <span>{isExpanded ? '▾' : '▸'}</span>
+                        <span>{recipe.version.trim() ? `Recipe v${recipe.version.trim()}` : `Recipe #${recipeIndex + 1}`}</span>
+                      </button>
+                      <button type="button" onClick={() => removeRecipeDraft(recipe.id)} style={{ ...btnDanger, fontSize: 11, padding: '4px 10px' }}>
+                        Remove
+                      </button>
+                </div>
+
+                    {isExpanded && (
+                      <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Recipe Version</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="e.g. 1.3.1"
+                      value={recipe.version}
+                      onChange={(e) => updateRecipeDraft(recipe.id, 'version', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Description</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="e.g. Patch release with minor upgrades"
+                      value={recipe.description}
+                      onChange={(e) => updateRecipeDraft(recipe.id, 'description', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <label style={{ ...labelStyle, marginBottom: 8 }}>Components</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                  {recipe.components.map((c, i) => (
+                    <div key={`${recipe.id}-${i}`} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        style={{ ...inputStyle, flex: 1 }}
+                        placeholder="Component name"
+                        value={c.name}
+                        onChange={(e) => updateDraftComponent(recipe.id, i, 'name', e.target.value)}
+                      />
+                      <input
+                        style={{ ...inputStyle, flex: 1 }}
+                        placeholder="Version"
+                        value={c.version}
+                        onChange={(e) => updateDraftComponent(recipe.id, i, 'version', e.target.value)}
+                      />
+                      {recipe.components.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDraftComponent(recipe.id, i)}
+                          style={{ ...btnDanger, padding: '6px 10px', fontSize: 14, lineHeight: 1 }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => addDraftComponent(recipe.id)} style={{ ...btnSecondary, alignSelf: 'flex-start', fontSize: 11, padding: '6px 12px' }}>
+                    + Add Component
+                  </button>
+                </div>
+
+                <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade From</label>
+                {upgradeCandidates.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {upgradeCandidates.map((v) => (
+                      <button
+                        key={`${recipe.id}-${v}`}
+                        type="button"
+                        onClick={() => toggleDraftUpgradePath(recipe.id, v)}
+                        style={{
+                          padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                          background: recipe.upgradePaths.includes(v) ? `${T.teal}22` : T.bgSurface,
+                          color: recipe.upgradePaths.includes(v) ? T.teal : T.textMuted,
+                          border: `1px solid ${recipe.upgradePaths.includes(v) ? T.teal : T.border}`,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        v{v}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: T.textMuted }}>
+                    Add a previous recipe version first to configure upgrade path.
+                  </div>
+                )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+      </div>
+
       <button type="submit" style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }} disabled={submitting}>
         {submitting ? 'Creating...' : 'Create Release'}
       </button>
@@ -149,145 +446,11 @@ function CreateReleaseForm({ cluster, onCreated }) {
 }
 
 // ============================================================================
-// Add Recipe Form (within a helm release)
-// ============================================================================
-function AddRecipeForm({ helmVersion, existingRecipes, cluster, onAdded }) {
-  const [version, setVersion] = useState('');
-  const [description, setDescription] = useState('');
-  const [components, setComponents] = useState([
-    { name: 'spark', version: '' },
-    { name: 'kafka', version: '' },
-    { name: 'airflow', version: '' },
-    { name: 'hbase', version: '' },
-  ]);
-  const [upgradePaths, setUpgradePaths] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
-
-  const updateComp = (i, field, val) => {
-    const next = [...components];
-    next[i] = { ...next[i], [field]: val };
-    setComponents(next);
-  };
-
-  const addComponent = () => setComponents([...components, { name: '', version: '' }]);
-  const removeComponent = (i) => setComponents(components.filter((_, j) => j !== i));
-
-  const toggleUpgrade = (rv) => {
-    setUpgradePaths((prev) => prev.includes(rv) ? prev.filter((p) => p !== rv) : [...prev, rv]);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!version.trim()) return;
-
-    const compMap = {};
-    components.forEach((c) => {
-      if (c.name.trim() && c.version.trim()) compMap[c.name.trim()] = c.version.trim();
-    });
-
-    setSubmitting(true);
-    fetch(`${API_BASE}/helm-releases/${helmVersion}/recipes?cluster=${cluster}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        version: version.trim(),
-        description: description.trim() || `HPE Ezmeral Runtime ${version.trim()}`,
-        components: compMap,
-        upgradePaths,
-      }),
-    })
-      .then((r) => {
-        if (r.status === 409) throw new Error('Recipe version already exists in this release');
-        if (!r.ok) throw new Error('Failed to add recipe');
-        return r.json();
-      })
-      .then(() => {
-        setVersion(''); setDescription('');
-        setComponents([
-          { name: 'spark', version: '' }, { name: 'kafka', version: '' },
-          { name: 'airflow', version: '' }, { name: 'hbase', version: '' },
-        ]);
-        setUpgradePaths([]);
-        onAdded('Recipe added successfully');
-      })
-      .catch((err) => onAdded(err.message, true))
-      .finally(() => setSubmitting(false));
-  };
-
-  return (
-    <form onSubmit={handleSubmit} style={{
-      ...cardStyle, borderLeft: `3px solid ${T.blue}`, marginTop: 12,
-    }}>
-      <h4 style={{ margin: '0 0 14px', fontSize: 14, color: T.blue }}>Add Recipe to Helm {helmVersion}</h4>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14, marginBottom: 16 }}>
-        <div>
-          <label style={labelStyle}>Recipe Version</label>
-          <input style={inputStyle} placeholder="e.g. 1.6.0" value={version}
-            onChange={(e) => setVersion(e.target.value)} required />
-        </div>
-        <div>
-          <label style={labelStyle}>Description</label>
-          <input style={inputStyle} placeholder="e.g. Major release with new features" value={description}
-            onChange={(e) => setDescription(e.target.value)} />
-        </div>
-      </div>
-
-      {/* Components */}
-      <label style={{ ...labelStyle, marginBottom: 10 }}>Components</label>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-        {components.map((c, i) => (
-          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <input style={{ ...inputStyle, flex: 1 }} placeholder="Component name"
-              value={c.name} onChange={(e) => updateComp(i, 'name', e.target.value)} />
-            <input style={{ ...inputStyle, flex: 1 }} placeholder="Version"
-              value={c.version} onChange={(e) => updateComp(i, 'version', e.target.value)} />
-            {components.length > 1 && (
-              <button type="button" onClick={() => removeComponent(i)} style={{
-                ...btnDanger, padding: '6px 10px', fontSize: 14, lineHeight: 1,
-              }}>×</button>
-            )}
-          </div>
-        ))}
-        <button type="button" onClick={addComponent} style={{ ...btnSecondary, alignSelf: 'flex-start', fontSize: 12 }}>
-          + Add Component
-        </button>
-      </div>
-
-      {/* Upgrade Paths */}
-      {existingRecipes.length > 0 && (
-        <>
-          <label style={{ ...labelStyle, marginBottom: 10 }}>Upgrade From (select existing recipes)</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-            {existingRecipes.map((r) => (
-              <button key={r.version} type="button" onClick={() => toggleUpgrade(r.version)} style={{
-                padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                background: upgradePaths.includes(r.version) ? `${T.teal}22` : T.bgSurface,
-                color: upgradePaths.includes(r.version) ? T.teal : T.textMuted,
-                border: `1px solid ${upgradePaths.includes(r.version) ? T.teal : T.border}`,
-                cursor: 'pointer', transition: 'all 0.2s',
-              }}>
-                v{r.version}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      <button type="submit" style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }} disabled={submitting}>
-        {submitting ? 'Adding...' : 'Add Recipe'}
-      </button>
-    </form>
-  );
-}
-
-// ============================================================================
 // Helm Release Card (expandable, shows recipes, allows delete)
 // ============================================================================
-function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
+function ReleaseCard({ release, onDeploy, cluster, onRefresh, onNotify }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
-  const [showAddRecipe, setShowAddRecipe] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState(null);
 
   useEffect(() => {
@@ -347,15 +510,13 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
     : release.status === 'deploying' ? T.blue
     : T.yellow;
 
-  const handleDeploy = () => {
+  const handleDeploy = async () => {
     if (!window.confirm(`Deploy Helm release ${release.version}? This will push to Git and trigger Jenkins.`)) return;
-    fetch(`${API_BASE}/helm-releases/${release.version}/deploy?cluster=${cluster}`, { method: 'POST' })
-      .then((r) => {
-        if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Deploy failed'); });
-        return r.json();
-      })
-      .then((data) => onNotify(data.message))
-      .catch((err) => onNotify(err.message, true));
+    try {
+      await onDeploy(release.version);
+    } catch (err) {
+      onNotify(err.message || 'Deploy failed', true);
+    }
   };
 
   return (
@@ -398,7 +559,7 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
           {release.status !== 'deploying' && (
             <button onClick={handleDeploy} style={{
               ...btnPrimary, padding: '6px 14px', fontSize: 12,
-            }}>{release.status === 'deployed' ? 'Redeploy' : 'Deploy'}</button>
+            }}>Deploy</button>
           )}
           {release.status === 'deploying' && (
             <span style={{
@@ -424,23 +585,26 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
           {/* Recipes list */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={labelStyle}>Recipes ({recipes.length})</span>
-            <button onClick={() => setShowAddRecipe(!showAddRecipe)}
-              style={{ ...btnSecondary, fontSize: 12 }}>
-              {showAddRecipe ? 'Cancel' : '+ Add Recipe'}
-            </button>
+            <span style={{ fontSize: 11, color: T.textMuted }}>
+              Add only during release creation
+            </span>
           </div>
 
-          {recipes.length === 0 && !showAddRecipe && (
+          {recipes.length === 0 && (
             <div style={{
               padding: '20px', borderRadius: 8, background: T.bgSurface,
               border: `1px dashed ${T.border}`, textAlign: 'center',
               color: T.textMuted, fontSize: 13,
             }}>
-              No recipes yet. Click "+ Add Recipe" to get started.
+              This release has no recipes. Create releases with recipes from the top form.
             </div>
           )}
 
           {recipes.map((recipe) => (
+            (() => {
+              const recipeIndex = recipes.findIndex((r) => r.version === recipe.version);
+              const effectiveFromPaths = getEffectiveUpgradePaths(recipes, recipe, recipeIndex);
+              return (
             <div key={recipe.version} style={{
               background: T.bgSurface, border: `1px solid ${T.border}`,
               borderRadius: 10, padding: 16, marginBottom: 10,
@@ -459,7 +623,7 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
                       <div style={{ fontSize: 15, fontWeight: 700, color: T.teal }}>
                         Recipe v{recipe.version}
                       </div>
-                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{recipe.description}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{normalizeRecipeDescription(recipe.description, recipe.version)}</div>
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => setEditingRecipe(recipe.version)}
@@ -472,8 +636,10 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
                   {/* Components grid */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                     {Object.entries(recipe.components || {}).map(([name, ver]) => {
-                      const fromPaths = recipe.upgradePaths || [];
-                      const toPaths = recipes.filter(r => r.upgradePaths?.includes(recipe.version)).map(r => r.version);
+                      const fromPaths = effectiveFromPaths;
+                      const toPaths = recipes
+                        .filter((r, idx) => getEffectiveUpgradePaths(recipes, r, idx).includes(recipe.version))
+                        .map((r) => r.version);
                       
                       const prevVers = fromPaths.map(pv => {
                         const pr = recipes.find(r => r.version === pv);
@@ -506,10 +672,10 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
 
                   {/* Upgrade paths info */}
                   <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {recipe.upgradePaths?.length > 0 && (
+                    {effectiveFromPaths.length > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, color: T.textMuted }}>Upgrades from:</span>
-                        {recipe.upgradePaths.map((p) => (
+                        {effectiveFromPaths.map((p) => (
                           <span key={p} style={{
                             padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
                             background: `${T.blue}15`, color: T.blue,
@@ -517,10 +683,10 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
                         ))}
                       </div>
                     )}
-                    {recipes.filter(r => r.upgradePaths?.includes(recipe.version)).length > 0 && (
+                    {recipes.filter((r, idx) => getEffectiveUpgradePaths(recipes, r, idx).includes(recipe.version)).length > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, color: T.textMuted }}>Upgrades to:</span>
-                        {recipes.filter(r => r.upgradePaths?.includes(recipe.version)).map((p) => (
+                        {recipes.filter((r, idx) => getEffectiveUpgradePaths(recipes, r, idx).includes(recipe.version)).map((p) => (
                           <span key={p.version} style={{
                             padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
                             background: `${T.yellow}15`, color: T.yellow,
@@ -532,24 +698,9 @@ function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
                 </>
               )}
             </div>
+              );
+            })()
           ))}
-
-          {/* Add recipe form */}
-          {showAddRecipe && (
-            <AddRecipeForm
-              helmVersion={release.version}
-              existingRecipes={recipes}
-              cluster={cluster}
-              onAdded={(msg, isError) => {
-                onNotify(msg, isError);
-                if (!isError) {
-                  setShowAddRecipe(false);
-                  setDetail(null);
-                  onRefresh();
-                }
-              }}
-            />
-          )}
         </div>
       )}
     </div>
@@ -584,7 +735,11 @@ function EditRecipeInline({ recipe, allRecipes, onSave, onCancel }) {
     components.forEach((c) => {
       if (c.name.trim() && c.version.trim()) compMap[c.name.trim()] = c.version.trim();
     });
-    onSave({ description, components: compMap, upgradePaths });
+    onSave({
+      description: normalizeRecipeDescription(description, recipe.version),
+      components: compMap,
+      upgradePaths,
+    });
   };
 
   const otherRecipes = allRecipes.filter((r) => r.version !== recipe.version);
@@ -682,6 +837,32 @@ export default function ManagePage() {
 
   const refresh = () => refetch();
 
+  async function deployRelease(version) {
+    const response = await fetch(`${API_BASE}/helm-releases/${version}/deploy?cluster=${cluster}`, {
+      method: 'POST',
+    });
+
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+
+    if (!response.ok) {
+      const message = payload.error || `Deploy failed for ${version}`;
+      notify(message, true);
+      window.alert(message);
+      throw new Error(message);
+    }
+
+    const message = payload.message || `Deploy triggered for ${version} on ${cluster.toUpperCase()}`;
+    notify(message);
+    window.alert(message);
+    refresh();
+    return payload;
+  }
+
   return (
     <div style={{
       fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
@@ -772,7 +953,14 @@ export default function ManagePage() {
         )}
 
         {!loading && releases.map((r) => (
-          <ReleaseCard key={r.version} release={r} cluster={cluster} onRefresh={refresh} onNotify={notify} />
+          <ReleaseCard
+            key={r.version}
+            release={r}
+            cluster={cluster}
+            onRefresh={refresh}
+            onNotify={notify}
+            onDeploy={deployRelease}
+          />
         ))}
       </div>
     </div>

@@ -5,10 +5,14 @@ import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
 import com.hpe.recipe.service.GitOpsService;
 import com.hpe.recipe.service.HelmReleaseService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.*;
 
@@ -16,11 +20,19 @@ import java.util.*;
 @CrossOrigin(origins = "*")
 @RequestMapping("/helm-releases")
 public class HelmReleaseController {
+    private static final Logger log = LoggerFactory.getLogger(HelmReleaseController.class);
+
     @Value("${jenkins.username}")
     private String jenkinsUser;
 
     @Value("${jenkins.token}")
     private String jenkinsToken;
+
+    @Value("${jenkins.url}")
+    private String jenkinsUrl;
+
+    @Value("${jenkins.job}")
+    private String jenkinsJob;
 
     private final HelmReleaseService helmReleaseService;
     private final ReleaseWebSocketHandler wsHandler;
@@ -279,29 +291,71 @@ public class HelmReleaseController {
     }
 
     private void triggerJenkins(String cluster) {
+
+        if (!StringUtils.hasText(jenkinsUser) || !StringUtils.hasText(jenkinsToken)) {
+            throw new IllegalStateException("Jenkins credentials are not configured (JENKINS_USER/JENKINS_TOKEN)");
+        }
+
         try {
-            String url = "http://localhost:8080/job/hpe-recipe/buildWithParameters?CLUSTER=" + cluster;
+            RestTemplate restTemplate = new RestTemplate();
 
-            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            String auth = jenkinsUser + ":" + jenkinsToken;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
 
-            String auth = jenkinsUser + ":" + jenkinsToken;   // ✅ USE ENV VALUES
-            byte[] encodedAuth = java.util.Base64.getEncoder().encode(auth.getBytes());
-            String authHeader = "Basic " + new String(encodedAuth);
+            // 🔹 Step 1: Get Crumb
+            String crumbUrl = jenkinsUrl + "/crumbIssuer/api/json";
 
-            headers.set("Authorization", authHeader);
+            HttpHeaders crumbHeaders = new HttpHeaders();
+            crumbHeaders.set("Authorization", "Basic " + encodedAuth);
 
-            org.springframework.http.HttpEntity<String> entity =
-                    new org.springframework.http.HttpEntity<>(headers);
+            HttpEntity<String> crumbRequest = new HttpEntity<>(crumbHeaders);
 
-            org.springframework.web.client.RestTemplate restTemplate =
-                    new org.springframework.web.client.RestTemplate();
+            ResponseEntity<Map> crumbResponse = restTemplate.exchange(
+                    crumbUrl,
+                    HttpMethod.GET,
+                    crumbRequest,
+                    Map.class
+            );
 
-            restTemplate.exchange(url, org.springframework.http.HttpMethod.POST, entity, String.class);
+            String crumb = (String) crumbResponse.getBody().get("crumb");
+            String crumbField = (String) crumbResponse.getBody().get("crumbRequestField");
 
-            System.out.println("🔥 Jenkins triggered for cluster: " + cluster);
+            log.info("Fetched Jenkins crumb");
+
+            // 🔹 Step 2: Build URL
+            String url = UriComponentsBuilder
+                    .fromHttpUrl(jenkinsUrl)
+                    .pathSegment("job", jenkinsJob, "buildWithParameters")
+                    .queryParam("CLUSTER", cluster)
+                    .toUriString();
+
+            log.info("Triggering Jenkins URL: {}", url);
+
+            // 🔹 Step 3: Headers
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Basic " + encodedAuth);
+            headers.set(crumbField, crumb);
+
+            HttpEntity<String> request = new HttpEntity<>(headers);
+
+            // 🔹 Step 4: Trigger
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    request,
+                    String.class
+            );
+
+            if (!(response.getStatusCode().is2xxSuccessful() || response.getStatusCode().is3xxRedirection())) {
+                log.error("Jenkins trigger failed: {}", response.getBody());
+                throw new RuntimeException("Jenkins trigger failed: " + response.getStatusCode());
+            }
+
+            log.info("Jenkins triggered for cluster={} status={}", cluster, response.getStatusCodeValue());
 
         } catch (Exception e) {
-            System.out.println("❌ Jenkins trigger failed: " + e.getMessage());
+            log.error("Error triggering Jenkins", e);
+            throw new RuntimeException("Failed to trigger Jenkins", e);
         }
     }
 }
