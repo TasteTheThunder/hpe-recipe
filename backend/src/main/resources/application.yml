@@ -21,7 +21,13 @@ gitops:
   token: ${GIT_TOKEN:}
   values-dir: helm/recipe-detection-chart
 
+jenkins:
+  url: http://localhost:8080
+  job: hpe-recipe
+  username: ${JENKINS_USER}
+  token: ${JENKINS_TOKEN}
 kubernetes:
+
   clusters:
     dev:
       context: dev

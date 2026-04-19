@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import useRealtimeReleases from './useRealtimeReleases';
 
 const API_BASE = '/api';
@@ -75,7 +75,7 @@ function Toast({ message, type, onClose }) {
 // ============================================================================
 // Create Helm Release Form
 // ============================================================================
-function CreateReleaseForm({ onCreated }) {
+function CreateReleaseForm({ cluster, onCreated }) {
   const [version, setVersion] = useState('');
   const [releaseName, setReleaseName] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -89,7 +89,7 @@ function CreateReleaseForm({ onCreated }) {
     e.preventDefault();
     if (!version.trim()) return;
     setSubmitting(true);
-    fetch(`${API_BASE}/helm-releases`, {
+    fetch(`${API_BASE}/helm-releases?cluster=${cluster}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -151,7 +151,7 @@ function CreateReleaseForm({ onCreated }) {
 // ============================================================================
 // Add Recipe Form (within a helm release)
 // ============================================================================
-function AddRecipeForm({ helmVersion, existingRecipes, onAdded }) {
+function AddRecipeForm({ helmVersion, existingRecipes, cluster, onAdded }) {
   const [version, setVersion] = useState('');
   const [description, setDescription] = useState('');
   const [components, setComponents] = useState([
@@ -186,7 +186,7 @@ function AddRecipeForm({ helmVersion, existingRecipes, onAdded }) {
     });
 
     setSubmitting(true);
-    fetch(`${API_BASE}/helm-releases/${helmVersion}/recipes`, {
+    fetch(`${API_BASE}/helm-releases/${helmVersion}/recipes?cluster=${cluster}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -284,24 +284,24 @@ function AddRecipeForm({ helmVersion, existingRecipes, onAdded }) {
 // ============================================================================
 // Helm Release Card (expandable, shows recipes, allows delete)
 // ============================================================================
-function ReleaseCard({ release, onRefresh, onNotify }) {
+function ReleaseCard({ release, cluster, onRefresh, onNotify }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
   const [showAddRecipe, setShowAddRecipe] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState(null);
 
   useEffect(() => {
-    if (expanded && !detail) {
-      fetch(`${API_BASE}/helm-releases/${release.version}`)
+    if (expanded) {
+      fetch(`${API_BASE}/helm-releases/${release.version}?cluster=${cluster}`)
         .then((r) => r.json())
         .then(setDetail)
         .catch(() => {});
     }
-  }, [expanded, release.version, detail]);
+  }, [expanded, release.version, cluster]);
 
   const handleDeleteRelease = () => {
     if (!window.confirm(`Delete Helm release ${release.version}? This removes all its recipes.`)) return;
-    fetch(`${API_BASE}/helm-releases/${release.version}`, { method: 'DELETE' })
+    fetch(`${API_BASE}/helm-releases/${release.version}?cluster=${cluster}`, { method: 'DELETE' })
       .then((r) => {
         if (!r.ok) throw new Error('Failed to delete');
         onNotify('Helm release deleted');
@@ -312,7 +312,7 @@ function ReleaseCard({ release, onRefresh, onNotify }) {
 
   const handleDeleteRecipe = (recipeVersion) => {
     if (!window.confirm(`Delete recipe ${recipeVersion} from Helm ${release.version}?`)) return;
-    fetch(`${API_BASE}/helm-releases/${release.version}/recipes/${recipeVersion}`, { method: 'DELETE' })
+    fetch(`${API_BASE}/helm-releases/${release.version}/recipes/${recipeVersion}?cluster=${cluster}`, { method: 'DELETE' })
       .then((r) => {
         if (!r.ok) throw new Error('Failed to delete');
         onNotify('Recipe deleted');
@@ -323,7 +323,7 @@ function ReleaseCard({ release, onRefresh, onNotify }) {
   };
 
   const handleUpdateRecipe = (recipeVersion, updates) => {
-    fetch(`${API_BASE}/helm-releases/${release.version}/recipes/${recipeVersion}`, {
+    fetch(`${API_BASE}/helm-releases/${release.version}/recipes/${recipeVersion}?cluster=${cluster}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -349,7 +349,7 @@ function ReleaseCard({ release, onRefresh, onNotify }) {
 
   const handleDeploy = () => {
     if (!window.confirm(`Deploy Helm release ${release.version}? This will push to Git and trigger Jenkins.`)) return;
-    fetch(`${API_BASE}/helm-releases/${release.version}/deploy`, { method: 'POST' })
+    fetch(`${API_BASE}/helm-releases/${release.version}/deploy?cluster=${cluster}`, { method: 'POST' })
       .then((r) => {
         if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Deploy failed'); });
         return r.json();
@@ -539,6 +539,7 @@ function ReleaseCard({ release, onRefresh, onNotify }) {
             <AddRecipeForm
               helmVersion={release.version}
               existingRecipes={recipes}
+              cluster={cluster}
               onAdded={(msg, isError) => {
                 onNotify(msg, isError);
                 if (!isError) {
@@ -640,8 +641,25 @@ function EditRecipeInline({ recipe, allRecipes, onSave, onCancel }) {
 // Main Manage Page
 // ============================================================================
 export default function ManagePage() {
-  const { helmReleases: releases, loading, lastEvent, refetch } = useRealtimeReleases();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialCluster = searchParams.get('cluster') === 'prod' ? 'prod' : 'dev';
+  const [cluster, setCluster] = useState(initialCluster);
+  const { helmReleases: releases, loading, error, lastEvent, refetch } = useRealtimeReleases(cluster);
   const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    const urlCluster = searchParams.get('cluster') === 'prod' ? 'prod' : 'dev';
+    setCluster((prev) => (prev === urlCluster ? prev : urlCluster));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const urlCluster = searchParams.get('cluster') === 'prod' ? 'prod' : 'dev';
+    if (urlCluster !== cluster) {
+      const next = new URLSearchParams(searchParams);
+      next.set('cluster', cluster);
+      setSearchParams(next, { replace: true });
+    }
+  }, [cluster, searchParams, setSearchParams]);
 
   // Show toast on realtime events from other users/Jenkins
   useEffect(() => {
@@ -693,7 +711,17 @@ export default function ManagePage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Link to="/" style={{
+          <select value={cluster} onChange={(e) => setCluster(e.target.value)} style={{
+            ...btnSecondary,
+            padding: '7px 10px',
+          }}>
+            <option value="dev">DEV</option>
+            <option value="prod">PROD</option>
+          </select>
+          <span style={{ display: 'flex', alignItems: 'center', fontSize: 12, color: T.textMuted, whiteSpace: 'nowrap' }}>
+            Cluster: {cluster.toUpperCase()}
+          </span>
+          <Link to={`/?cluster=${cluster}`} style={{
             ...btnSecondary, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6,
           }}>
             ← Visualizer
@@ -702,13 +730,20 @@ export default function ManagePage() {
         </div>
       </header>
 
+      {error && (
+        <div style={{
+          background: `${T.red}15`, color: T.red,
+          padding: '10px 24px', fontSize: 13, borderBottom: `1px solid ${T.red}33`,
+        }}>{error}</div>
+      )}
+
       {/* Content */}
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 20px' }}>
         {/* Create new release */}
         <CreateReleaseForm onCreated={(msg, isError) => {
           notify(msg, isError);
           if (!isError) refresh();
-        }} />
+        }} cluster={cluster} />
 
         {/* Existing releases */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, marginTop: 8 }}>
@@ -737,7 +772,7 @@ export default function ManagePage() {
         )}
 
         {!loading && releases.map((r) => (
-          <ReleaseCard key={r.version} release={r} onRefresh={refresh} onNotify={notify} />
+          <ReleaseCard key={r.version} release={r} cluster={cluster} onRefresh={refresh} onNotify={notify} />
         ))}
       </div>
     </div>

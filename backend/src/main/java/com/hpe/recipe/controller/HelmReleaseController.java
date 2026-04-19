@@ -5,6 +5,7 @@ import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
 import com.hpe.recipe.service.GitOpsService;
 import com.hpe.recipe.service.HelmReleaseService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +16,11 @@ import java.util.*;
 @CrossOrigin(origins = "*")
 @RequestMapping("/helm-releases")
 public class HelmReleaseController {
+    @Value("${jenkins.username}")
+    private String jenkinsUser;
+
+    @Value("${jenkins.token}")
+    private String jenkinsToken;
 
     private final HelmReleaseService helmReleaseService;
     private final ReleaseWebSocketHandler wsHandler;
@@ -147,6 +153,8 @@ public class HelmReleaseController {
 
         try {
             gitOpsService.generateAndPush(release);
+            // 🔥 NEW: Trigger Jenkins with cluster
+            triggerJenkins(cluster);
 
             return ResponseEntity.ok(Map.of(
                     "message", "Pushed to Git. Jenkins will deploy shortly.",
@@ -268,5 +276,32 @@ public class HelmReleaseController {
             @RequestParam String to) {
 
         return helmReleaseService.getUpgradePathsBetweenHelmVersions(cluster, from, to);
+    }
+
+    private void triggerJenkins(String cluster) {
+        try {
+            String url = "http://localhost:8080/job/hpe-recipe/buildWithParameters?CLUSTER=" + cluster;
+
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+
+            String auth = jenkinsUser + ":" + jenkinsToken;   // ✅ USE ENV VALUES
+            byte[] encodedAuth = java.util.Base64.getEncoder().encode(auth.getBytes());
+            String authHeader = "Basic " + new String(encodedAuth);
+
+            headers.set("Authorization", authHeader);
+
+            org.springframework.http.HttpEntity<String> entity =
+                    new org.springframework.http.HttpEntity<>(headers);
+
+            org.springframework.web.client.RestTemplate restTemplate =
+                    new org.springframework.web.client.RestTemplate();
+
+            restTemplate.exchange(url, org.springframework.http.HttpMethod.POST, entity, String.class);
+
+            System.out.println("🔥 Jenkins triggered for cluster: " + cluster);
+
+        } catch (Exception e) {
+            System.out.println("❌ Jenkins trigger failed: " + e.getMessage());
+        }
     }
 }

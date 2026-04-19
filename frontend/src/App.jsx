@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import useRealtimeReleases from './useRealtimeReleases';
 import ReactFlow, {
   Background,
@@ -433,7 +433,7 @@ function DetailPanel({ recipe, helmVersion, allRecipes, onClose }) {
 // ============================================================================
 // Comparison Modal
 // ============================================================================
-function CompareView({ releases, currentVersion, onClose }) {
+function CompareView({ releases, currentVersion, cluster, onClose }) {
   const [compareWith, setCompareWith] = useState('');
   const [diff, setDiff] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -443,12 +443,12 @@ function CompareView({ releases, currentVersion, onClose }) {
   useEffect(() => {
     if (!compareWith) { setDiff(null); return; }
     setLoading(true);
-    fetch(`${API_BASE}/helm-releases/compare?from=${compareWith}&to=${currentVersion}`)
+    fetch(`${API_BASE}/helm-releases/compare?from=${compareWith}&to=${currentVersion}&cluster=${cluster}`)
       .then((r) => r.json())
       .then(setDiff)
       .catch(() => setDiff(null))
       .finally(() => setLoading(false));
-  }, [compareWith, currentVersion]);
+  }, [compareWith, currentVersion, cluster]);
 
   return (
     <div style={{
@@ -549,7 +549,10 @@ function StatsBar({ release }) {
 // Main App
 // ============================================================================
 export default function App() {
-  const { helmReleases, loading: releasesLoading, error: releasesError } = useRealtimeReleases();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialCluster = searchParams.get('cluster') === 'prod' ? 'prod' : 'dev';
+  const [cluster, setCluster] = useState(initialCluster);
+  const { helmReleases, loading: releasesLoading, error: releasesError } = useRealtimeReleases(cluster);
   const [selectedVersion, setSelectedVersion] = useState('');
   const [releaseDetail, setReleaseDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -561,6 +564,20 @@ export default function App() {
 
   const loading = releasesLoading || detailLoading;
 
+  useEffect(() => {
+    const urlCluster = searchParams.get('cluster') === 'prod' ? 'prod' : 'dev';
+    setCluster((prev) => (prev === urlCluster ? prev : urlCluster));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const urlCluster = searchParams.get('cluster') === 'prod' ? 'prod' : 'dev';
+    if (urlCluster !== cluster) {
+      const next = new URLSearchParams(searchParams);
+      next.set('cluster', cluster);
+      setSearchParams(next, { replace: true });
+    }
+  }, [cluster, searchParams, setSearchParams]);
+
   // Sync error from realtime hook
   useEffect(() => {
     if (releasesError) setError(releasesError);
@@ -570,19 +587,40 @@ export default function App() {
   useEffect(() => {
     if (!selectedVersion) {
       setReleaseDetail(null); setSelectedRecipeVersion(null);
-      setNodes([]); setEdges([]); return;
+      setNodes([]); setEdges([]); setError(null); return;
     }
+
+    // Wait until releases for the current cluster are loaded, then validate selection.
+    if (releasesLoading) return;
+
+    const existsInCluster = helmReleases.some((r) => r.version === selectedVersion);
+    if (!existsInCluster) {
+      setSelectedVersion('');
+      setReleaseDetail(null);
+      setSelectedRecipeVersion(null);
+      setNodes([]);
+      setEdges([]);
+      setError(null);
+      return;
+    }
+
+    const controller = new AbortController();
     setDetailLoading(true); setError(null); setSelectedRecipeVersion(null);
-    fetch(`${API_BASE}/helm-releases/${selectedVersion}`)
+    fetch(`${API_BASE}/helm-releases/${selectedVersion}?cluster=${cluster}`, { signal: controller.signal })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((data) => {
         setReleaseDetail(data);
         const { nodes: n, edges: e } = buildGraph(data.recipes || [], null);
         setNodes(n); setEdges(e);
       })
-      .catch(() => { setError(`Failed to load version ${selectedVersion}`); setReleaseDetail(null); })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setError(`Failed to load version ${selectedVersion}`);
+        setReleaseDetail(null);
+      })
       .finally(() => setDetailLoading(false));
-  }, [selectedVersion, setNodes, setEdges]);
+    return () => controller.abort();
+  }, [selectedVersion, cluster, releasesLoading, helmReleases, setNodes, setEdges]);
 
   // Rebuild graph on recipe selection
   useEffect(() => {
@@ -632,6 +670,17 @@ export default function App() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <select value={cluster} onChange={(e) => setCluster(e.target.value)} style={{
+            padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+            background: T.bgSurface, color: T.text, border: `1px solid ${T.border}`,
+            cursor: 'pointer',
+          }}>
+            <option value="dev">DEV</option>
+            <option value="prod">PROD</option>
+          </select>
+          <span style={{ fontSize: 12, color: T.textMuted, whiteSpace: 'nowrap' }}>
+            Cluster: {cluster.toUpperCase()}
+          </span>
           <VersionTimeline
             releases={helmReleases}
             selected={selectedVersion}
@@ -645,7 +694,7 @@ export default function App() {
               whiteSpace: 'nowrap',
             }}>Compare</button>
           )}
-          <Link to="/manage" style={{
+          <Link to={`/manage?cluster=${cluster}`} style={{
             padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
             background: T.teal, color: T.white, textDecoration: 'none',
             cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
@@ -769,6 +818,7 @@ export default function App() {
         <CompareView
           releases={helmReleases}
           currentVersion={selectedVersion}
+          cluster={cluster}
           onClose={() => setShowCompare(false)}
         />
       )}

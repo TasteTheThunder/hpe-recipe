@@ -1,29 +1,29 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 const API_BASE = '/api';
-const WS_URL = `ws://${window.location.hostname}:8081/api/ws/releases`;
 
-export default function useRealtimeReleases() {
+export default function useRealtimeReleases(cluster) {
   const [helmReleases, setHelmReleases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastEvent, setLastEvent] = useState(null);
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
+  const wsUrl = `ws://${window.location.hostname}:8081/api/ws/releases?cluster=${cluster}`;
 
   const fetchReleases = useCallback(() => {
     setLoading(true);
-    return fetch(`${API_BASE}/helm-releases`)
+    return fetch(`${API_BASE}/helm-releases?cluster=${cluster}`)
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((data) => { setHelmReleases(Array.isArray(data) ? data : []); setError(null); })
       .catch(() => setError('Failed to load helm releases. Is the backend running?'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [cluster]);
 
   const connectWs = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState <= 1) return; // already open/connecting
 
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -51,7 +51,7 @@ export default function useRealtimeReleases() {
     ws.onerror = () => {
       ws.close();
     };
-  }, [fetchReleases]);
+  }, [fetchReleases, wsUrl]);
 
   useEffect(() => {
     fetchReleases();
