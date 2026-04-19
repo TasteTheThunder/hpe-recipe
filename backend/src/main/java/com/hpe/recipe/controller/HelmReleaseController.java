@@ -136,6 +136,7 @@ public class HelmReleaseController {
         if (release == null) return ResponseEntity.notFound().build();
 
         release.setStatus(status);
+        helmReleaseService.updateHelmRelease(cluster, version, release);
 
         wsHandler.broadcast("status_changed",
                 Map.of("version", version, "status", status, "cluster", cluster));
