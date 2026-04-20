@@ -20,10 +20,10 @@ pipeline {
             }
         }
 
-        stage('Set Kubernetes Context') {
+        stage('Validate Cluster Access') {
             steps {
                 script {
-                    sh "kubectl config use-context ${params.CLUSTER}"
+                    sh "kubectl --context=${params.CLUSTER} get nodes"
                     echo "Using cluster: ${params.CLUSTER}"
                 }
             }
@@ -54,20 +54,20 @@ pipeline {
                         ? "-f ${env.VALUES_FILE}" : ""
 
                     def releaseExists = sh(
-                        script: "${HELM_CMD} status ${RELEASE_NAME} --namespace ${KUBE_NAMESPACE} 2>/dev/null",
+                        script: "${HELM_CMD} --kube-context ${params.CLUSTER} status ${RELEASE_NAME} --namespace ${KUBE_NAMESPACE} 2>/dev/null",
                         returnStatus: true
                     ) == 0
 
                     if (releaseExists) {
                         sh """
-                            ${HELM_CMD} upgrade ${RELEASE_NAME} ${CHART_DIR} \
+                            ${HELM_CMD} --kube-context ${params.CLUSTER} upgrade ${RELEASE_NAME} ${CHART_DIR} \
                                 --namespace ${KUBE_NAMESPACE} \
                                 ${valuesArg}
                         """
                         echo "Upgraded Helm release: ${RELEASE_NAME}"
                     } else {
                         sh """
-                            ${HELM_CMD} install ${RELEASE_NAME} ${CHART_DIR} \
+                            ${HELM_CMD} --kube-context ${params.CLUSTER} install ${RELEASE_NAME} ${CHART_DIR} \
                                 --namespace ${KUBE_NAMESPACE} \
                                 ${valuesArg}
                         """
@@ -80,8 +80,8 @@ pipeline {
         stage('Verify ConfigMap') {
             steps {
                 script {
-                    sh "${HELM_CMD} list --namespace ${KUBE_NAMESPACE}"
-                    sh "kubectl get configmaps --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
+                    sh "${HELM_CMD} --kube-context ${params.CLUSTER} list --namespace ${KUBE_NAMESPACE}"
+                    sh "kubectl --context=${params.CLUSTER} get configmaps --namespace ${KUBE_NAMESPACE} -l app.kubernetes.io/instance=${RELEASE_NAME}"
                 }
             }
         }
