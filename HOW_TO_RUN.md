@@ -1,192 +1,318 @@
-# HPE Recipe Detection - How to Run
+# 🚀 HPE Recipe Detection — Complete Setup & Run Guide
 
-## Prerequisites
+This guide explains how to run the project locally with:
 
-| Tool | Required Version | Check Command |
-|------|-----------------|---------------|
-| Java (JDK) | 17+ | `java -version` |
-| Maven | 3.9+ | `mvn -version` |
-| Node.js | 18+ | `node -v` |
-| npm | 9+ | `npm -v` |
+* React Frontend
+* Spring Boot Backend
+* Kubernetes (Minikube: dev + prod clusters)
+* Helm
+* Jenkins CI/CD (with CSRF crumb support)
+* GitHub (GitOps-style integration)
 
 ---
 
-## Quick Start (Local Development)
+# 📌 1. Prerequisites
 
-### 1. Build the Backend
+| Tool     | Version | Check                      |
+| -------- | ------- | -------------------------- |
+| Java     | 17+     | `java -version`            |
+| Maven    | 3.9+    | `mvn -version`             |
+| Node.js  | 18+     | `node -v`                  |
+| npm      | 9+      | `npm -v`                   |
+| Docker   | Latest  | `docker -v`                |
+| Minikube | Latest  | `minikube version`         |
+| kubectl  | Latest  | `kubectl version --client` |
+| Helm     | v3+     | `helm version`             |
+| Jenkins  | Running | http://localhost:8080      |
+
+---
+
+# 🧠 2. Architecture Overview
+
+```
+React UI
+   ↓
+Spring Boot Backend
+   ↓
+GitHub (Helm values)
+   ↓
+Jenkins Pipeline
+   ↓
+Kubernetes (dev / prod)
+```
+
+---
+
+# ⚙️ 3. Configuration (VERY IMPORTANT)
+
+## 🔐 3.1 Environment Variables
+
+These are required by the backend (especially for deploy flow). Set them before running Spring Boot.
+
+Linux/macOS/WSL:
+
+```bash
+export JENKINS_USER=your-jenkins-username
+export JENKINS_TOKEN=your-jenkins-api-token
+export GIT_USERNAME=your-github-username
+export GIT_TOKEN=your-github-token
+```
+
+PowerShell:
+
+```powershell
+$env:JENKINS_USER="your-jenkins-username"
+$env:JENKINS_TOKEN="your-jenkins-api-token"
+$env:GIT_USERNAME="your-github-username"
+$env:GIT_TOKEN="your-github-token"
+```
+
+---
+
+## 🔧 3.2 application.yml
+
+Located in:
+
+```
+backend/src/main/resources/application.yml
+```
+
+```yaml
+server:
+  port: 8081
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: recipe-detection-api
+
+gitops:
+  repo-url: https://github.com/TasteTheThunder/hpe-recipe.git (Your Repo URL)
+  local-path: ${java.io.tmpdir}/hpe-recipe-gitops
+  branch: main
+  username: ${GIT_USERNAME:TasteTheThunder}
+  token: ${GIT_TOKEN}
+  values-dir: helm/recipe-detection-chart
+
+jenkins:
+  url: ${JENKINS_URL:http://localhost:8080}
+  job: ${JENKINS_JOB:hpe-recipe}
+  username: ${JENKINS_USER}
+  token: ${JENKINS_TOKEN}
+
+kubernetes:
+  clusters:
+    dev:
+      context: dev
+    prod:
+      context: prod
+```
+
+---
+
+# ☸️ 4. Setup Kubernetes (Minikube Multi-Cluster)
+
+## Start clusters
+
+```bash
+minikube start -p dev
+minikube start -p prod
+```
+
+## Verify contexts
+
+```bash
+kubectl config get-contexts
+```
+
+Expected:
+
+```text
+dev
+prod
+```
+
+---
+
+# 🔧 5. Setup Jenkins
+
+## 5.1 Create Job
+
+* Go to: http://localhost:8080
+* Create job: `hpe-recipe`
+* Type: Pipeline
+
+## 5.2 Configure Pipeline
+
+* Select: **Pipeline script from SCM**
+* Repo: your GitHub repo
+* Branch: `main`
+* Script Path: `Jenkinsfile`
+
+---
+
+## 🔐 5.3 Enable API Trigger
+
+* Go to: **Build Triggers**
+* Enable:
+
+  ```
+  Trigger builds remotely
+  ```
+* Add token (optional)
+
+---
+
+## 🔒 5.4 CSRF (Crumb)
+
+Your backend already handles crumb automatically ✅
+(No need to disable CSRF)
+
+---
+
+# 🚀 6. Run Backend
 
 ```bash
 cd backend
-mvn clean package -DskipTests
+mvn clean spring-boot:run
 ```
 
-### 2. Start the Backend (Terminal 1)
+Backend runs at:
+
+```
+http://localhost:8081/api
+```
+
+---
+
+# 🌐 7. Run Frontend
 
 ```bash
-cd backend
-mvn spring-boot:run
+cd frontend
+npm install   # only first time
+npm run dev
 ```
 
-Backend starts on **http://localhost:8081/api**
+Frontend runs at:
 
-### 3. Verify Backend is Running
+```
+http://localhost:3000
+```
+
+---
+
+# 🧪 8. Verify Setup
 
 ```bash
 curl http://localhost:8081/api/health
 ```
 
-Expected response:
+Expected:
+
 ```json
-{"service":"recipe-detection-api","status":"UP"}
-```
-
-### 4. Install Frontend Dependencies (first time only)
-
-```bash
-cd frontend
-npm install
-```
-
-### 5. Start the Frontend (Terminal 2)
-
-```bash
-cd frontend
-npm run dev
-```
-
-Frontend starts on **http://localhost:3000**
-
-### 6. Open the App
-
-Open your browser and go to: **http://localhost:3000**
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/helm-releases` | List all Helm releases |
-| GET | `/api/helm-releases/{version}` | Get a specific release with recipes |
-| GET | `/api/helm-releases/{version}/recipes` | List recipes for a release |
-| GET | `/api/helm-releases/{version}/recipes/{recipeVersion}/components` | Get components for a recipe |
-| GET | `/api/helm-releases/{version}/recipes/{recipeVersion}/upgradePaths` | Get upgrade paths |
-| GET | `/api/helm-releases/compare?from=X&to=Y` | Compare two Helm versions |
-| GET | `/api/catalogs` | List all catalogs |
-| GET | `/api/recipes/{recipeVersion}/components` | Get recipe components |
-
-### Example API Calls
-
-```bash
-# List all helm releases
-curl http://localhost:8081/api/helm-releases
-
-# Get details for helm release v0.0.1
-curl http://localhost:8081/api/helm-releases/0.0.1
-
-# Get recipes for a release
-curl http://localhost:8081/api/helm-releases/0.0.1/recipes
-
-# Get components for a specific recipe in a release
-curl http://localhost:8081/api/helm-releases/0.0.1/recipes/1.4.0/components
-
-# Compare two helm versions
-curl "http://localhost:8081/api/helm-releases/compare?from=0.0.1&to=0.0.2"
+{"status":"UP","service":"recipe-detection-api"}
 ```
 
 ---
 
-## Docker Deployment
+# 🚀 9. How Deployment Works
 
-### Build Docker Image
+### Step 1: Create Release (from UI)
 
-```bash
-docker build -t hpe-recipe-detection:0.0.1 .
-```
+* Saves draft release in backend memory (no Kubernetes write yet)
+* Release appears in UI so you can review/edit before deployment
 
-### Run with Docker
+### Step 2: Deploy (UI)
 
-```bash
-docker run -p 8080:8080 hpe-recipe-detection:0.0.1
-```
+* Calls backend `POST /api/helm-releases/{version}/deploy?cluster=dev|prod`
+* Backend marks draft as `deploying`, pushes GitOps values, and triggers Jenkins
 
-App available at **http://localhost:8080/api**
+### Step 3: Jenkins Pipeline
+
+* Selects cluster (dev/prod)
+* Runs Helm upgrade/install (first actual write to cluster)
+* Calls backend status API (`deployed`/`failed`), then backend reads state from cluster
 
 ---
 
-## Kubernetes / Minikube Deployment
-
-### 1. Start Minikube
+# ☸️ 10. Manual Helm Commands (Optional)
 
 ```bash
-minikube start --driver=docker --cpus=4 --memory=8192
-```
+cd helm/recipe-detection-chart
 
-### 2. Build and Load Image
+# Install on dev cluster
+kubectl config use-context dev
+helm install recipe-dev . -f values-v0.0.1.yaml
 
-```bash
-docker build -t hpe-recipe-detection:0.0.1 .
-minikube image load hpe-recipe-detection:0.0.1
-```
+# Install on prod cluster
+kubectl config use-context prod
+helm install recipe-prod . -f values-v0.0.2.yaml
 
-### 3. Deploy with Helm
 
-```bash
-helm install recipe-detection ./helm/recipe-detection-chart --namespace default
-```
-
-### 4. Port Forward and Access
-
-```bash
-kubectl port-forward svc/recipe-detection 8080:8080
-```
-
-App available at **http://localhost:8080/api**
-
-### 5. Check Pod Status
-
-```bash
-kubectl get pods -l app=recipe-detection
-kubectl logs -l app=recipe-detection
-```
-
-### 6. Uninstall
-
-```bash
-helm uninstall recipe-detection
+# Delete
+helm uninstall recipe-dev
 ```
 
 ---
 
-## Stopping the Application
+# 🛑 11. Stop Clusters
 
-- **Backend:** Press `Ctrl+C` in Terminal 1
-- **Frontend:** Press `Ctrl+C` in Terminal 2
-
----
-
-## Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| Port 8081 already in use | Kill the process: `netstat -ano \| findstr :8081` then `taskkill /PID <pid> /F` |
-| Port 3000 already in use | Kill the process or change port in `frontend/vite.config.js` |
-| Maven build fails | Ensure JDK 17+ is installed and `JAVA_HOME` is set |
-| npm install fails | Delete `node_modules` and `package-lock.json`, then run `npm install` again |
-| Frontend can't reach backend | Make sure backend is running first on port 8081 |
+```bash
+minikube stop -p dev
+minikube stop -p prod
+```
 
 ---
 
-## Project Structure
+# 🐳 12. Docker (Optional)
+
+```bash
+docker build -t hpe-recipe-detection .
+docker run -p 8081:8081 hpe-recipe-detection
+```
+
+---
+
+# ⚠️ 13. Troubleshooting
+
+| Issue                  | Solution                      |
+| ---------------------- | ----------------------------- |
+| Jenkins not triggering | Check `/api/helm-releases/{version}/deploy?cluster=...` is called |
+| 403 error Jenkins      | Ensure crumb is handled       |
+| Frontend can't fetch   | Restart backend               |
+| Helm install fails     | Use `helm upgrade`            |
+| Cluster not found      | Check kube contexts           |
+
+---
+
+# 📁 14. Project Structure
 
 ```
-hpe-recipe-detection/
-├── backend/          # Spring Boot REST API (Java 17, port 8081)
-├── frontend/         # React UI (Vite, port 3000)
-├── helm/             # Kubernetes Helm chart
-├── docs/             # Architecture & implementation docs
-├── Dockerfile        # Multi-stage Docker build
-├── Jenkinsfile       # Jenkins CI/CD pipeline
-└── .github/          # GitHub Actions workflow
+hpe-recipe/
+├── backend/
+├── frontend/
+├── helm/
+├── Jenkinsfile
+├── Dockerfile
+└── README.md
+```
+
+---
+
+# 🏁 Final Notes
+
+```text
+✔ Multi-cluster deployment (dev + prod)
+✔ Jenkins CI/CD integrated
+✔ Secure API (CSRF handled)
+✔ GitOps-style workflow
+```
+
+---
+
+# 🔥 One-line Summary
+
+```text
+Start backend → start frontend → create release → click deploy → Jenkins deploys to selected cluster
 ```

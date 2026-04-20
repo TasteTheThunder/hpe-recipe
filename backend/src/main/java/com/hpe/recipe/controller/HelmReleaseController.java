@@ -138,6 +138,11 @@ public class HelmReleaseController {
         release.setStatus(status);
         helmReleaseService.updateHelmRelease(cluster, version, release);
 
+        if ("deployed".equalsIgnoreCase(status)) {
+            helmReleaseService.cleanupDraftConfigMapsIfHelmExists(cluster, version);
+            helmReleaseService.cleanupDraftReleaseIfHelmExists(cluster, version);
+        }
+
         wsHandler.broadcast("status_changed",
                 Map.of("version", version, "status", status, "cluster", cluster));
 

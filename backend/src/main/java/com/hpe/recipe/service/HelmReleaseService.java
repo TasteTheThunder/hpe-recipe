@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
 import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.StatusDetails;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -19,11 +21,13 @@ public class HelmReleaseService {
     private static final Logger log = LoggerFactory.getLogger(HelmReleaseService.class);
 
     private static final String LABEL_APP_NAME = "app.kubernetes.io/name";
+    private static final String LABEL_MANAGED_BY = "app.kubernetes.io/managed-by";
     private static final String LABEL_APP_VERSION = "app.kubernetes.io/version";
     private static final String ANNOTATION_RELEASE_NAME = "meta.helm.sh/release-name";
     private static final String RECIPE_DATA_KEY = "recipe-data.json";
 
     private final Map<String, KubernetesClient> clients;
+    private final Map<String, Map<String, HelmRelease>> draftReleasesByCluster = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public HelmReleaseService(Map<String, KubernetesClient> clients) {
@@ -46,6 +50,78 @@ public class HelmReleaseService {
                 .withLabel(LABEL_APP_NAME, "recipe-detection")
                 .list()
                 .getItems();
+    }
+
+    private boolean isHelmManaged(ConfigMap cm) {
+        Map<String, String> labels = cm.getMetadata() != null ? cm.getMetadata().getLabels() : null;
+        String managedBy = labels != null ? labels.get(LABEL_MANAGED_BY) : null;
+        return "Helm".equalsIgnoreCase(managedBy);
+    }
+
+    private Map<String, HelmRelease> draftsForCluster(String cluster) {
+        return draftReleasesByCluster.computeIfAbsent(cluster, k -> new ConcurrentHashMap<>());
+    }
+
+    private HelmRelease copyRelease(HelmRelease source) {
+        if (source == null) {
+            return null;
+        }
+
+        HelmRelease copy = new HelmRelease();
+        copy.setVersion(source.getVersion());
+        copy.setReleaseName(source.getReleaseName());
+        copy.setStatus(source.getStatus());
+        copy.setCluster(source.getCluster());
+
+        List<Recipe> copiedRecipes = new ArrayList<>();
+        if (source.getRecipes() != null) {
+            for (Recipe recipe : source.getRecipes()) {
+                Recipe r = new Recipe();
+                r.setVersion(recipe.getVersion());
+                r.setDescription(recipe.getDescription());
+                r.setComponents(recipe.getComponents() == null
+                        ? new LinkedHashMap<>()
+                        : new LinkedHashMap<>(recipe.getComponents()));
+                r.setUpgradePaths(recipe.getUpgradePaths() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(recipe.getUpgradePaths()));
+                copiedRecipes.add(r);
+            }
+        }
+        copy.setRecipes(copiedRecipes);
+
+        return copy;
+    }
+
+    private void storeDraft(String cluster, HelmRelease release) {
+        HelmRelease stored = copyRelease(release);
+        stored.setCluster(cluster);
+        draftsForCluster(cluster).put(stored.getVersion(), stored);
+    }
+
+    private HelmRelease getDraft(String cluster, String version) {
+        HelmRelease draft = draftsForCluster(cluster).get(version);
+        if (draft == null) {
+            return null;
+        }
+        HelmRelease copied = copyRelease(draft);
+        copied.setCluster(cluster);
+        return copied;
+    }
+
+    private void removeDraft(String cluster, String version) {
+        draftsForCluster(cluster).remove(version);
+    }
+
+    private boolean helmManagedReleaseExists(String cluster, String version) {
+        List<ConfigMap> cms = fetchRecipeConfigMaps(cluster);
+
+        return cms.stream().anyMatch(cm -> {
+            HelmRelease parsed = parseConfigMap(cluster, cm);
+            return parsed != null
+                    && version.equals(parsed.getVersion())
+                    && isHelmManaged(cm);
+        });
     }
 
     // ================= PARSE =================
@@ -94,14 +170,50 @@ public class HelmReleaseService {
 
         List<ConfigMap> cms = fetchRecipeConfigMaps(cluster);
 
-        return cms.stream()
+        // One release per chart version in API responses.
+        // If both draft and Helm configmaps exist, prefer draft (pending/deploying state).
+        Map<String, ConfigMap> selectedByVersion = new LinkedHashMap<>();
+        for (ConfigMap cm : cms) {
+            HelmRelease parsed = parseConfigMap(cluster, cm);
+            if (parsed == null) {
+                continue;
+            }
+
+            ConfigMap existing = selectedByVersion.get(parsed.getVersion());
+            if (existing == null) {
+                selectedByVersion.put(parsed.getVersion(), cm);
+                continue;
+            }
+
+            if (isHelmManaged(existing) && !isHelmManaged(cm)) {
+                selectedByVersion.put(parsed.getVersion(), cm);
+            }
+        }
+
+        Map<String, HelmRelease> merged = selectedByVersion.values().stream()
                 .map(cm -> parseConfigMap(cluster, cm))
                 .filter(Objects::nonNull)
+                .collect(Collectors.toMap(
+                        HelmRelease::getVersion,
+                        this::copyRelease,
+                        (a, b) -> a,
+                        LinkedHashMap::new
+                ));
+
+        draftsForCluster(cluster).forEach((version, draft) -> merged.put(version, copyRelease(draft)));
+
+        return merged.values().stream()
+                .peek(r -> r.setCluster(cluster))
                 .sorted(Comparator.comparing(HelmRelease::getVersion))
                 .collect(Collectors.toList());
     }
 
     public HelmRelease getHelmRelease(String cluster, String version) {
+        HelmRelease draft = getDraft(cluster, version);
+        if (draft != null) {
+            return draft;
+        }
+
         return getAllHelmReleases(cluster).stream()
                 .filter(h -> h.getVersion().equals(version))
                 .findFirst()
@@ -112,31 +224,21 @@ public class HelmReleaseService {
 
         if (getHelmRelease(cluster, release.getVersion()) != null) return null;
 
-        try {
-            String json = buildRecipeJson(release);
-
-            ConfigMap cm = new io.fabric8.kubernetes.api.model.ConfigMapBuilder()
-                    .withNewMetadata()
-                    .withName("recipe-v" + release.getVersion().replace(".", "-"))
-                    .withNamespace("default")
-                    .addToLabels(LABEL_APP_NAME, "recipe-detection")
-                    .addToLabels(LABEL_APP_VERSION, release.getVersion())
-                    .addToAnnotations(ANNOTATION_RELEASE_NAME, release.getReleaseName())
-                    .endMetadata()
-                    .addToData(RECIPE_DATA_KEY, json)
-                    .build();
-
-            getClient(cluster).configMaps().inNamespace("default").resource(cm).create();
-
-            return release;
-
-        } catch (Exception e) {
-            log.error("Create failed: {}", e.getMessage());
-            return null;
+        if (release.getStatus() == null || release.getStatus().isBlank()) {
+            release.setStatus("pending");
         }
+
+        storeDraft(cluster, release);
+        return getDraft(cluster, release.getVersion());
     }
 
     public HelmRelease updateHelmRelease(String cluster, String version, HelmRelease release) {
+        if (draftsForCluster(cluster).containsKey(version)) {
+            release.setVersion(version);
+            storeDraft(cluster, release);
+            return getDraft(cluster, version);
+        }
+
         if (getHelmRelease(cluster, version) == null) return null;
         updateConfigMap(cluster, version, release);
         return release;
@@ -144,19 +246,61 @@ public class HelmReleaseService {
 
     public boolean deleteHelmRelease(String cluster, String version) {
 
+        removeDraft(cluster, version);
+
         List<ConfigMap> cms = fetchRecipeConfigMaps(cluster);
+        boolean deleted = false;
 
         for (ConfigMap cm : cms) {
             HelmRelease r = parseConfigMap(cluster, cm);
+
             if (r != null && r.getVersion().equals(version)) {
+
+                List<StatusDetails> result = getClient(cluster).configMaps()
+                        .inNamespace("default")
+                        .withName(cm.getMetadata().getName())
+                        .delete();
+
+                boolean removed = result != null && !result.isEmpty();
+
+                deleted = deleted || removed;
+            }
+        }
+
+        return deleted;
+    }
+
+    public void cleanupDraftConfigMapsIfHelmExists(String cluster, String version) {
+        List<ConfigMap> cms = fetchRecipeConfigMaps(cluster);
+
+        boolean helmExistsForVersion = cms.stream().anyMatch(cm -> {
+            HelmRelease parsed = parseConfigMap(cluster, cm);
+            return parsed != null
+                    && version.equals(parsed.getVersion())
+                    && isHelmManaged(cm);
+        });
+
+        if (!helmExistsForVersion) {
+            return;
+        }
+
+        for (ConfigMap cm : cms) {
+            HelmRelease parsed = parseConfigMap(cluster, cm);
+            if (parsed != null
+                    && version.equals(parsed.getVersion())
+                    && !isHelmManaged(cm)) {
                 getClient(cluster).configMaps()
                         .inNamespace("default")
                         .withName(cm.getMetadata().getName())
                         .delete();
-                return true;
             }
         }
-        return false;
+    }
+
+    public void cleanupDraftReleaseIfHelmExists(String cluster, String version) {
+        if (helmManagedReleaseExists(cluster, version)) {
+            removeDraft(cluster, version);
+        }
     }
 
     // ================= RECIPE =================
@@ -282,7 +426,9 @@ public class HelmReleaseService {
 
             HelmRelease parsed = parseConfigMap(cluster, cm);
 
-            if (parsed != null && parsed.getVersion().equals(version)) {
+                if (parsed != null
+                    && parsed.getVersion().equals(version)
+                    && !isHelmManaged(cm)) {
 
                 try {
                     cm.getData().put(RECIPE_DATA_KEY, buildRecipeJson(release));
