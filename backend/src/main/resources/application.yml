@@ -33,3 +33,7 @@ kubernetes:
       context: dev
     prod:
       context: prod
+    qa:
+      context: qa
+    integration:
+      context: integration

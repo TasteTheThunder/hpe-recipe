@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        choice(name: 'CLUSTER', choices: ['dev', 'prod'], description: 'Select target cluster')
+        choice(name: 'CLUSTER', choices: ['dev', 'prod', 'qa', 'integration'], description: 'Select target cluster')
     }
 
     environment {

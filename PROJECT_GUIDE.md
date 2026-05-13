@@ -1,432 +1,260 @@
-# HPE Recipe Detection - Complete Project Guide
+# HPE Recipe Detection - Current Project Guide
 
-## What Is This Project?
+## What This Project Does
 
-HPE (Hewlett Packard Enterprise) deploys software to Kubernetes clusters using **Helm charts**. Each Helm chart version contains a set of **recipes**, and each recipe defines specific versions of software components (Spark, Kafka, Airflow, HBase, etc.).
+This project manages Helm release recipe metadata and deployment status for two Kubernetes targets (`dev` and `prod`).
 
-**The problem:** When a Helm chart is deployed in production, it's hard to know which component versions are inside it. Engineers have to dig through Git history, check ConfigMaps, and manually trace versions.
+Engineers can:
+- Create a Helm release draft from UI
+- Add recipes and component versions
+- Trigger deployment through GitOps + Jenkins
+- Watch deployment status in real time via WebSocket
+- Visualize recipe/component and upgrade relationships
 
-**This project solves that** by providing a web UI where engineers can:
-- Define recipes and component versions for each Helm chart release
-- Deploy them to Kubernetes with one click
-- Visualize the entire version graph — recipes, components, and upgrade paths
-- See real-time status updates as deployments happen
+## Current End-to-End Flow
 
----
+1. User creates a release in `/manage`.
+2. Backend stores it as draft in backend memory (not in Kubernetes).
+3. User clicks Deploy.
+4. Backend sets status to `deploying`, generates `values-v<version>.yaml`, updates `Chart.yaml`, commits and pushes to Git.
+5. Backend triggers Jenkins `buildWithParameters` with `CLUSTER=dev|prod` (with Jenkins crumb and basic auth).
+6. Jenkins runs Helm install/upgrade on the selected kube-context.
+7. Jenkins calls `PUT /api/helm-releases/{version}/status?cluster=...` with `deployed` or `failed`.
+8. Backend broadcasts status changes over WebSocket and, on `deployed`, removes draft state if Helm-managed data is present.
+9. Frontend receives event and refetches data.
 
-## Architecture
+## Architecture Snapshot
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        THE FULL FLOW                            │
-│                                                                 │
-│   Browser (/manage)                                             │
-│       │                                                         │
-│       ├── 1. Create Helm release (e.g. 0.0.4)                  │
-│       ├── 2. Add recipes + components                           │
-│       ├── 3. Click "Deploy"                                     │
-│       │                                                         │
-│   Spring Boot Backend (port 8081)                               │
-│       │                                                         │
-│       ├── 4. Generates values-v0.0.4.yaml                      │
-│       ├── 5. Commits + pushes to GitHub (JGit)                  │
-│       ├── 6. Sets status to "deploying"                         │
-│       ├── 7. Broadcasts via WebSocket to all browsers           │
-│       │                                                         │
-│   GitHub (NaomiiAP/hpe-recipe)                                  │
-│       │                                                         │
-│       ├── 8. Jenkins polls every 1 min, detects new commit      │
-│       │                                                         │
-│   Jenkins (port 8080)                                           │
-│       │                                                         │
-│       ├── 9.  Checkout code                                     │
-│       ├── 10. Read Chart.yaml version                           │
-│       ├── 11. mvn clean package (build backend JAR)             │
-│       ├── 12. minikube image build (Docker image)               │
-│       ├── 13. helm install/upgrade (deploy to K8s)              │
-│       ├── 14. kubectl rollout status (verify pods)              │
-│       ├── 15. PUT /api/helm-releases/0.0.4/status → "deployed" │
-│       │                                                         │
-│   Spring Boot Backend                                           │
-│       │                                                         │
-│       ├── 16. Updates status in memory                          │
-│       ├── 17. Broadcasts "deployed" via WebSocket               │
-│       │                                                         │
-│   All Browsers                                                  │
-│       │                                                         │
-│       └── 18. Status flips to "deployed" (no refresh needed)    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+- Frontend: React + Vite (`/` visualizer, `/manage` manager)
+- Backend: Spring Boot API on port `8081`, context path `/api`
+- Real-time: native WebSocket endpoint `/api/ws/releases`
+- GitOps: JGit writes values file and chart version, then pushes
+- CI/CD: Jenkins deploys Helm chart to selected cluster context
+- Kubernetes data source: Helm-managed ConfigMap data per release version
 
----
+## Tech Stack (Current)
 
-## Tech Stack
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 18, Vite, React Router, React Flow, Dagre |
+| Backend | Spring Boot 3.2.5, Java 17 |
+| Realtime | Spring WebSocket + browser WebSocket client |
+| GitOps | JGit + SnakeYAML |
+| K8s access | Fabric8 Kubernetes Client |
+| CI/CD | Jenkins Pipeline |
+| Packaging | Docker multi-stage build |
+| Helm | Helm v3 chart (`recipe-detection`) |
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | React 18 + Vite | Web UI (visualizer + manage page) |
-| **Visualization** | React Flow + Dagre | Interactive graph of recipes and components |
-| **Real-time** | WebSocket (native) | Live updates across all browsers |
-| **Routing** | React Router DOM | Navigation between pages |
-| **Backend** | Spring Boot 3.2.5 (Java 17) | REST API + WebSocket server |
-| **Git Integration** | JGit (Eclipse) | Clone, commit, push to GitHub from Java |
-| **YAML Generation** | SnakeYAML | Generates Helm values files |
-| **CI/CD** | Jenkins | Automated build and deploy pipeline |
-| **Containerization** | Docker (multi-stage) | Packages backend into a container image |
-| **Orchestration** | Kubernetes (Minikube) | Runs the deployed application |
-| **Package Manager** | Helm 3 | Manages K8s deployments with templated charts |
-| **K8s Client** | Fabric8 | Java library for K8s API (future use) |
-| **Source Control** | Git + GitHub | Code repository and GitOps trigger |
-
----
-
-## Project Structure
+## Current Repository Structure
 
 ```
-hpe-recipe-detection/
-│
-├── backend/                          # Spring Boot REST API
-│   ├── src/main/java/com/hpe/recipe/
-│   │   ├── RecipeDetectionApplication.java    # Entry point
-│   │   │
-│   │   ├── controller/
-│   │   │   ├── HealthController.java          # GET /health
-│   │   │   ├── HelmReleaseController.java     # Full CRUD + deploy endpoint
-│   │   │   ├── CatalogController.java         # Legacy catalog endpoints
-│   │   │   └── RecipeController.java          # Recipe query endpoints
-│   │   │
-│   │   ├── service/
-│   │   │   ├── HelmReleaseService.java        # Business logic + in-memory data
-│   │   │   ├── GitOpsService.java             # YAML generation + Git push
-│   │   │   └── CatalogService.java            # Legacy catalog service
-│   │   │
-│   │   ├── model/
-│   │   │   ├── HelmRelease.java               # version, releaseName, status, recipes
-│   │   │   ├── Recipe.java                    # version, description, components, upgradePaths
-│   │   │   └── Catalog.java                   # Legacy catalog model
-│   │   │
-│   │   └── config/
-│   │       ├── WebSocketConfig.java           # Registers /ws/releases endpoint
-│   │       └── ReleaseWebSocketHandler.java   # Broadcasts events to all clients
-│   │
-│   ├── src/main/resources/
-│   │   └── application.yml                    # Server config + GitOps config
-│   │
-│   └── pom.xml                                # Maven dependencies
-│
-├── frontend/                          # React UI
-│   ├── src/
-│   │   ├── main.jsx                   # Entry point with React Router
-│   │   ├── App.jsx                    # Visualizer page (/) — graph view
-│   │   ├── ManagePage.jsx             # Manage page (/manage) — CRUD + deploy
-│   │   └── useRealtimeReleases.js     # WebSocket hook for live updates
-│   │
-│   ├── package.json                   # Dependencies
-│   ├── vite.config.js                 # Dev server config + API proxy
-│   └── index.html                     # HTML entry
-│
-├── helm/                              # Kubernetes Helm Chart
-│   └── recipe-detection-chart/
-│       ├── Chart.yaml                 # Chart metadata (version updated by GitOps)
-│       ├── values.yaml                # Base values (defaults)
-│       ├── values-v0.0.2.yaml         # Values for Helm release 0.0.2
-│       ├── values-v0.0.3.yaml         # Values for Helm release 0.0.3
-│       ├── values-v0.0.4.yaml         # Values for Helm release 0.0.4 (created by website)
-│       └── templates/
-│           ├── deployment.yaml        # K8s Deployment with health probes
-│           ├── service.yaml           # K8s Service (ClusterIP:8080)
-│           ├── configmap.yaml         # ConfigMap for recipe data
-│           └── _helpers.tpl           # Helm template helpers
-│
-├── Dockerfile                         # Multi-stage build (Maven → JRE)
-├── Jenkinsfile                        # CI/CD pipeline definition
-├── .github/workflows/build.yml        # GitHub Actions CI (alternative to Jenkins)
-├── .gitignore
-├── HOW_TO_RUN.md                      # Commands to run the project
-└── PROJECT_GUIDE.md                   # This file
+hpe-recipe/
+|- backend/
+|  |- src/main/java/com/hpe/recipe/
+|  |  |- controller/
+|  |  |  |- HealthController.java
+|  |  |  |- HelmReleaseController.java
+|  |  |  |- CatalogController.java
+|  |  |  |- RecipeController.java
+|  |  |- service/
+|  |  |  |- HelmReleaseService.java
+|  |  |  |- GitOpsService.java
+|  |  |  |- CatalogService.java
+|  |  |- config/
+|  |  |  |- WebSocketConfig.java
+|  |  |  |- ReleaseWebSocketHandler.java
+|  |- src/main/resources/application.yml
+|  |- pom.xml
+|- frontend/
+|  |- src/
+|  |  |- main.jsx
+|  |  |- App.jsx
+|  |  |- ManagePage.jsx
+|  |  |- useRealtimeReleases.js
+|  |- package.json
+|  |- vite.config.js
+|- helm/recipe-detection-chart/
+|  |- Chart.yaml
+|  |- values.yaml
+|  |- values-v*.yaml
+|  |- templates/
+|  |  |- configmap.yaml
+|  |  |- _helpers.tpl
+|- Jenkinsfile
+|- Dockerfile
+|- HOW_TO_RUN.md
+|- PROJECT_GUIDE.md
 ```
 
----
+## Frontend Pages
 
-## The Two Pages
+### 1) Visualizer (`/`)
 
-### Page 1: Visualizer (`/` — http://localhost:3000)
+Capabilities currently present:
+- Cluster selector (`dev` / `prod` via query param)
+- Helm version timeline
+- Recipe dependency graph (React Flow + Dagre)
+- Component expansion for selected recipe
+- Compare dropdown using `/api/helm-releases/compare`
+- Stats bar and detail panel
+- Live refresh from WebSocket events
 
-This is the main dashboard. It shows:
+### 2) Manage (`/manage`)
 
-- **Version Timeline** — circular buttons at the top for each Helm release (v1, v2, v3...)
-- **Recipe Graph** — interactive node graph showing recipes and their upgrade paths
-- **Component Expansion** — click a recipe node to see its components (Spark, Kafka, etc.)
-- **Detail Panel** — right sidebar showing component versions and upgrade paths
-- **Compare Modal** — compare two Helm versions side-by-side to see what changed
-- **Stats Bar** — recipe count, component count, upgrade paths, deployment status
+Capabilities currently present:
+- Create release form with draft recipes/components
+- List releases with status badges
+- Expand release to inspect recipes/components/upgrade links
+- Edit/delete recipes
+- Delete release
+- Deploy button (`POST /api/helm-releases/{version}/deploy?cluster=...`)
+- Toasts and real-time status updates
 
-### Page 2: Recipe Manager (`/manage` — http://localhost:3000/manage)
+## Backend Behavior (Important)
 
-This is where engineers create and manage releases:
+### Release storage model
 
-- **Create Helm Release** — enter chart version and release name
-- **Add Recipes** — define recipe version, description, component versions
-- **Edit Recipes** — inline editing of descriptions, components, upgrade paths
-- **Deploy Button** — pushes to Git, triggers Jenkins, deploys to K8s
-- **Redeploy Button** — update an already-deployed release with new recipes
-- **Delete** — remove recipes or entire releases
-- **Real-time Status** — watch status change live: pending → deploying → deployed
-- **Toast Notifications** — see when other users or Jenkins make changes
+- Before deployment: release exists as in-memory draft in backend (`HelmReleaseService`).
+- After deployment: Helm-managed ConfigMap becomes the deployed source.
+- On `deployed` status update, backend removes draft if Helm-managed release exists.
 
----
+### Status lifecycle
 
-## API Endpoints
+Common statuses observed in current code:
+- `pending`
+- `deploying`
+- `deployed`
+- `failed`
+- `push_failed`
+
+## API Endpoints (Current)
+
+Note: Helm release APIs are cluster-scoped and require `cluster` query param.
 
 ### Helm Releases
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/helm-releases` | List all releases (lightweight) |
-| GET | `/api/helm-releases/{version}` | Get full release with recipes |
-| POST | `/api/helm-releases` | Create a new release |
-| PUT | `/api/helm-releases/{version}` | Update release details |
-| DELETE | `/api/helm-releases/{version}` | Delete a release |
-| PUT | `/api/helm-releases/{version}/status` | Update status (called by Jenkins) |
-| POST | `/api/helm-releases/{version}/deploy` | Push to Git + trigger deployment |
+| Method | Endpoint |
+| --- | --- |
+| GET | `/api/helm-releases?cluster=dev|prod` |
+| GET | `/api/helm-releases/{version}?cluster=dev|prod` |
+| POST | `/api/helm-releases?cluster=dev|prod` |
+| PUT | `/api/helm-releases/{version}?cluster=dev|prod` |
+| DELETE | `/api/helm-releases/{version}?cluster=dev|prod` |
+| PUT | `/api/helm-releases/{version}/status?cluster=dev|prod` |
+| POST | `/api/helm-releases/{version}/deploy?cluster=dev|prod` |
+| GET | `/api/helm-releases/compare?cluster=dev|prod&from=X&to=Y` |
 
-### Recipes (within a release)
+### Recipes Within Release
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/helm-releases/{v}/recipes` | List recipes for a release |
-| POST | `/api/helm-releases/{v}/recipes` | Add a recipe |
-| PUT | `/api/helm-releases/{v}/recipes/{rv}` | Update a recipe |
-| DELETE | `/api/helm-releases/{v}/recipes/{rv}` | Delete a recipe |
-| GET | `/api/helm-releases/{v}/recipes/{rv}/components` | Get component versions |
-| GET | `/api/helm-releases/{v}/recipes/{rv}/upgradePaths` | Get upgrade paths |
+| Method | Endpoint |
+| --- | --- |
+| GET | `/api/helm-releases/{v}/recipes?cluster=dev|prod` |
+| POST | `/api/helm-releases/{v}/recipes?cluster=dev|prod` |
+| PUT | `/api/helm-releases/{v}/recipes/{rv}?cluster=dev|prod` |
+| DELETE | `/api/helm-releases/{v}/recipes/{rv}?cluster=dev|prod` |
+| GET | `/api/helm-releases/{v}/recipes/{rv}/components?cluster=dev|prod` |
+| GET | `/api/helm-releases/{v}/recipes/{rv}/upgradePaths?cluster=dev|prod` |
 
-### Compare & Health
+### Legacy Catalog APIs
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/helm-releases/compare?from=X&to=Y` | Diff two Helm versions |
-| GET | `/api/health` | Health check |
+| Method | Endpoint |
+| --- | --- |
+| GET | `/api/catalogs` |
+| GET | `/api/catalogs/{catalogVersion}/recipes` |
+| GET | `/api/recipes/{recipeVersion}/components` |
+| GET | `/api/recipes/{recipeVersion}/upgradePaths` |
 
-### WebSocket
+### Health
 
-| Endpoint | Description |
-|----------|-------------|
-| `ws://localhost:8081/api/ws/releases` | Real-time event stream |
+| Method | Endpoint |
+| --- | --- |
+| GET | `/api/health` |
 
-**WebSocket Events:**
-- `release_created` — new release added
-- `release_updated` — release details changed
-- `release_deleted` — release removed
-- `recipe_added` — recipe added to a release
-- `recipe_updated` — recipe modified
-- `recipe_deleted` — recipe removed
-- `status_changed` — deployment status changed (from Jenkins or deploy action)
+## WebSocket Contract
 
----
+- Endpoint used by frontend: `ws://<host>:8081/api/ws/releases?cluster=dev|prod`
+- Server registration path: `/api/ws/releases`
 
-## Data Model
+Events broadcast:
+- `release_created`
+- `release_updated`
+- `release_deleted`
+- `recipe_added`
+- `recipe_updated`
+- `recipe_deleted`
+- `status_changed`
 
-### HelmRelease
+Payload shape:
+
 ```json
 {
-  "version": "0.0.4",
-  "releaseName": "recipe-detection-v0-0-4",
-  "status": "deployed",
-  "recipes": [ ... ]
+  "event": "status_changed",
+  "data": { "version": "0.0.8", "status": "deploying", "cluster": "dev" },
+  "timestamp": 1710000000000
 }
 ```
 
-**Status lifecycle:** `pending` → `deploying` → `deployed` or `failed`
+## Jenkins Pipeline (Current Stages)
 
-### Recipe
-```json
-{
-  "version": "1.6.0",
-  "description": "Next-gen HPE Ezmeral Runtime with upgraded analytics",
-  "components": {
-    "spark": "3.5.1",
-    "kafka": "3.6.0",
-    "airflow": "2.8.2",
-    "hbase": "2.7.0"
-  },
-  "upgradePaths": ["1.5.0", "1.4.1"]
-}
-```
+`Jenkinsfile` currently executes these stages:
 
----
+1. Checkout
+2. Validate Cluster Access (`kubectl --context=<cluster> get nodes`)
+3. Determine Chart Version (reads `Chart.yaml`, chooses matching `values-v<version>.yaml`)
+4. Deploy Helm (Config Only) (`helm install` or `helm upgrade` with `--kube-context`)
+5. Verify ConfigMap
+6. Update Backend Status (`deployed`)
 
-## GitOps Flow (How Deploy Works)
+Post actions:
+- `failure`: sends status `failed` to backend API
+- `always`: cleans Jenkins workspace
 
-This is the core of the project — **GitOps** means Git is the single source of truth.
+## Helm Chart State (Current)
 
-### What happens when you click Deploy:
+Current chart templates include:
+- `templates/configmap.yaml`
+- `templates/_helpers.tpl`
 
-1. **Backend generates YAML** — converts the release's recipes into a Helm values file (`values-v0.0.4.yaml`)
-2. **Backend updates Chart.yaml** — sets the version field so Jenkins knows what to deploy
-3. **Backend commits and pushes** — uses JGit to commit both files and push to GitHub
-4. **Status → "deploying"** — broadcast to all browsers via WebSocket
-5. **Jenkins detects the push** — SCM polling (every 1 minute) or manual Build Now
-6. **Jenkins pipeline runs:**
-   - Checks out code from GitHub
-   - Reads Chart.yaml to determine version
-   - Builds backend with Maven
-   - Builds Docker image inside Minikube
-   - Runs `helm install` (new) or `helm upgrade` (existing) with the values file
-   - Waits for pods to be ready
-   - Calls `PUT /api/helm-releases/{version}/status` with `"deployed"`
-7. **Status → "deployed"** — broadcast to all browsers via WebSocket
+This means the chart currently renders recipe metadata ConfigMap and labels/helpers. Deployment/Service templates are not present in current chart template directory.
 
-### What happens on failure:
+## Configuration (Current)
 
-- Jenkins `post { failure }` block calls the status API with `"failed"`
-- All browsers see the red "failed" badge instantly
+Key runtime settings in `backend/src/main/resources/application.yml`:
 
-### Why GitOps?
+- Server: `8081`, context path `/api`
+- GitOps repo: `https://github.com/TasteTheThunder/hpe-recipe.git`
+- GitOps local clone path: `${java.io.tmpdir}/hpe-recipe-gitops`
+- Jenkins URL/job from env with defaults:
+  - `JENKINS_URL` default `http://localhost:8080`
+  - `JENKINS_JOB` default `hpe-recipe`
+- Cluster contexts configured:
+  - `dev -> dev`
+  - `prod -> prod`
 
-- **Audit trail** — every deployment is a Git commit, you can see who deployed what and when
-- **Rollback** — revert a Git commit to roll back a deployment
-- **Single source of truth** — what's in Git is what's deployed
-- **Industry standard** — tools like ArgoCD and Flux follow this same pattern
+Required environment variables for deploy flow:
+- `JENKINS_USER`
+- `JENKINS_TOKEN`
+- `GIT_USERNAME` (optional default exists)
+- `GIT_TOKEN`
 
----
+## Local Run Notes
 
-## Jenkins Pipeline Stages
+Frontend:
 
-The `Jenkinsfile` defines 6 stages:
-
-```
-┌──────────────────┐
-│ 1. Checkout       │  Pull code from GitHub
-├──────────────────┤
-│ 2. Chart Version  │  Read version from Chart.yaml
-├──────────────────┤
-│ 3. Build Backend  │  mvn clean package -DskipTests
-├──────────────────┤
-│ 4. Docker Image   │  minikube image build
-├──────────────────┤
-│ 5. Deploy to K8s  │  helm install/upgrade with values file
-├──────────────────┤
-│ 6. Verify         │  kubectl rollout status + show pods
-├──────────────────┤
-│ 7. Update Status  │  curl PUT /api/.../status → "deployed"
-└──────────────────┘
-```
-
-- On **success**: status → `deployed`
-- On **failure**: status → `failed`
-- **Always**: workspace cleaned up
-
----
-
-## Kubernetes Resources
-
-When a Helm release is deployed, it creates:
-
-| Resource | Name Pattern | Purpose |
-|----------|-------------|---------|
-| **Deployment** | `recipe-v{x}-recipe-detection` | Runs the application pod |
-| **Service** | `recipe-v{x}-recipe-detection` | ClusterIP service on port 8080 |
-| **ConfigMap** | `recipe-v{x}-recipe-detection-config` | Stores recipe data as JSON |
-
-Each release gets its own set of resources, so multiple versions can run side-by-side.
-
-### Pod Configuration
-- **Image:** `hpe-recipe-detection:{version}`
-- **Pull Policy:** `Never` (image is built locally in Minikube)
-- **Port:** 8080 (overrides the default 8081 via `SERVER_PORT` env var)
-- **Health Probes:** Liveness and readiness on `/api/health`
-- **Resources:** 256Mi-512Mi memory, 250m-500m CPU
-
----
-
-## How to Run
-
-### Prerequisites
-- Java 17+, Maven 3.9+, Node.js 18+, Docker, Minikube, Helm 3, Jenkins
-
-### Start (2 terminals):
-
-**Terminal 1 — Backend:**
-```bash
-cd backend
-GIT_TOKEN=ghp_yourToken mvn spring-boot:run
-```
-
-**Terminal 2 — Frontend:**
 ```bash
 cd frontend
+npm install
 npm run dev
 ```
 
-### Access:
-- **Visualizer:** http://localhost:3000
-- **Manage page:** http://localhost:3000/manage
-- **API:** http://localhost:8081/api
-- **Jenkins:** http://localhost:8080
+Backend can be started in two ways:
+- From IDE (Spring Boot run configuration), or
+- Via Maven command line if Maven is installed.
 
-### Background services (should already be running):
-- **Minikube:** `minikube start --driver=docker`
-- **Jenkins:** runs as a Windows service on port 8080
+This project does not require Maven to be installed on your machine if you run backend directly from your IDE setup.
 
----
+## Known Characteristics
 
-## Real-Time Updates (WebSocket)
-
-Every browser connects to `ws://localhost:8081/api/ws/releases`. When any change happens — whether from the website, another user, or Jenkins — every browser gets updated instantly.
-
-**How it works:**
-1. `ReleaseWebSocketHandler.java` maintains a set of all connected WebSocket sessions
-2. Every controller method that modifies data calls `wsHandler.broadcast(event, data)`
-3. The broadcast sends a JSON message to every connected browser
-4. The frontend `useRealtimeReleases.js` hook receives the message and refetches data
-
-**Auto-reconnect:** If the WebSocket disconnects (backend restart, network issue), it automatically reconnects every 3 seconds.
-
----
-
-## Sample Data
-
-The project comes with 3 pre-loaded Helm releases:
-
-| Helm Version | Recipes | Components |
-|-------------|---------|------------|
-| **0.0.1** | v1.3.0, v1.3.1 | Spark 3.1.2→3.2.0, Kafka 3.1.0→3.2.1, Airflow 2.3.0→2.4.1, HBase 2.4.6→2.4.8 |
-| **0.0.2** | v1.3.2, v1.4.0 | Spark 3.2.1→3.3.0, Kafka 3.2.3→3.3.2, Airflow 2.4.3→2.5.3, HBase 2.4.9→2.5.4 |
-| **0.0.3** | v1.4.1, v1.5.0 | Spark 3.3.1→3.4.0, Kafka 3.4.0→3.5.0, Airflow 2.6.3→2.7.0, HBase 2.5.5→2.6.0 |
-
-Each newer recipe upgrades component versions. Upgrade paths show which older recipes can be upgraded to newer ones.
-
----
-
-## Key Design Decisions
-
-| Decision | Why |
-|----------|-----|
-| **In-memory data** | Keeps the project simple for demo purposes. Production would use a database. |
-| **JGit (not CLI git)** | Pure Java, works on Windows without PATH issues, handles credentials cleanly. |
-| **WebSocket (not polling)** | Instant updates, no wasted requests, scales to many clients. |
-| **GitOps (not direct deploy)** | Industry standard, provides audit trail, matches how HPE operates. |
-| **Per-version values files** | Each Helm release has its own `values-v{x}.yaml`, keeping versions isolated. |
-| **Jenkins SCM polling** | Simpler than webhooks for local dev (no public URL needed). |
-| **Multi-stage Docker** | Final image ~200MB instead of ~700MB, no build tools in production. |
-| **Helm chart with ConfigMap** | Recipe data is non-sensitive, ConfigMaps are easy to inspect with kubectl. |
-| **React Flow + Dagre** | Professional graph visualization with automatic layout. |
-
----
-
-## Interview Talking Points
-
-This project covers these enterprise software engineering topics:
-
-1. **Kubernetes** — Deployments, Services, ConfigMaps, health probes, resource limits
-2. **Helm** — Chart templating, values files, install/upgrade lifecycle, multi-version releases
-3. **CI/CD** — Jenkins pipeline, automated build-deploy-verify cycle
-4. **GitOps** — Git as source of truth, automated deployments from commits
-5. **Docker** — Multi-stage builds, image optimization, local registry with Minikube
-6. **REST API Design** — Full CRUD, proper HTTP status codes, resource-based URLs
-7. **WebSocket** — Real-time bidirectional communication, broadcast pattern
-8. **Spring Boot** — Dependency injection, configuration properties, service layer pattern
-9. **React** — Hooks, component composition, routing, state management
-10. **Full-Stack Integration** — Frontend → Backend → Git → CI/CD → K8s → WebSocket → Frontend
+- Draft releases are in backend memory before deployment.
+- If backend restarts before deployment completes, drafts are lost.
+- Once deployed and status is updated, cluster-held Helm-managed data is used.
