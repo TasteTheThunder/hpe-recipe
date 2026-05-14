@@ -1,0 +1,12 @@
+recipeData:
+  chartVersion: 4.2.4
+  recipes:
+  - version: 6.3.1
+    description: Test2
+    components:
+      spark: 2.1.2
+      kafka: 2.1.4
+      airflow: 2.1.5
+      demo2: 2.1.6
+    upgradePaths: [
+      ]
