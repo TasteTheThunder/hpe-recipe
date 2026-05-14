@@ -97,9 +97,9 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
             width: 44, height: 44, borderRadius: 10,
             background: `linear-gradient(135deg, ${T.teal}, ${T.tealDark})`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 16, color: T.white, fontWeight: 800,
+            fontSize: 11, color: T.white, fontWeight: 800,
           }}>
-            v{release.version.split('.').pop()}
+            v{release.version}
           </div>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>

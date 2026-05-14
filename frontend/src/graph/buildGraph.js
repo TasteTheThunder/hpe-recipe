@@ -28,13 +28,8 @@ export default function buildGraph(recipes, selectedRecipeVersion) {
           target: `recipe-${recipe.version}`,
           type: 'smoothstep',
           animated: true,
-          label: 'upgrades to',
-          labelStyle: { fontSize: 10, fill: T.white, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 },
-          labelBgStyle: { fill: T.teal, fillOpacity: 0.9 },
-          labelBgPadding: [10, 5],
-          labelBgBorderRadius: 6,
-          style: { stroke: T.teal, strokeWidth: 4, opacity: 0.8 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: T.teal, width: 28, height: 28 },
+          style: { stroke: T.teal, strokeWidth: 3, opacity: 0.8 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: T.teal, width: 14, height: 20 },
         });
       }
     });
@@ -57,7 +52,7 @@ export default function buildGraph(recipes, selectedRecipeVersion) {
           target: nid,
           type: 'smoothstep',
           style: { stroke: theme.border, strokeWidth: 1.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: theme.border, width: 12, height: 12 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: theme.border, width: 14, height: 14 },
         });
       });
     }

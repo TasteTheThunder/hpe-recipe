@@ -171,6 +171,7 @@ export default function App() {
             releases={helmReleases}
             selected={selectedVersion}
             onSelect={setSelectedVersion}
+            cluster={cluster}
           />
           {selectedVersion && (
             <button onClick={() => setShowCompare(true)} style={{

@@ -1,7 +1,7 @@
 import React from 'react';
 import T from '../../theme';
 
-export default function VersionTimeline({ releases, selected, onSelect }) {
+export default function VersionTimeline({ releases, selected, onSelect, cluster }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
       {releases.map((hr, i) => {
@@ -18,20 +18,20 @@ export default function VersionTimeline({ releases, selected, onSelect }) {
             )}
             <button
               onClick={() => onSelect(hr.version)}
-              title={`${hr.version} — ${hr.releaseName}`}
+              title={`Helm Chart ${hr.version}${hr.releaseName ? ` — ${hr.releaseName}` : ''}${cluster ? ` | Cluster: ${cluster.toUpperCase()}` : ''}`}
               style={{
-                width: 40, height: 40, borderRadius: '50%',
+                width: 48, height: 40, borderRadius: 20,
                 border: `2px solid ${active ? T.teal : T.border}`,
                 background: active ? T.teal : T.bgSurface,
                 color: active ? T.white : T.textMuted,
-                fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                fontSize: 10, fontWeight: 700, cursor: 'pointer',
                 transition: 'all 0.25s ease',
                 boxShadow: active ? `0 0 12px ${T.teal}66` : 'none',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               }}
             >
-              v{hr.version.split('.').pop()}
+              v{hr.version}
             </button>
           </React.Fragment>
         );

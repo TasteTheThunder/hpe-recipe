@@ -1,14 +1,19 @@
+import { Handle, Position } from 'reactflow';
 import T from '../../theme';
 
 export default function RecipeNode({ data }) {
   const sel = data.isSelected;
+  const version = String(data.version || '').replace(/^v/i, '');
   return (
     <div style={{
       background: sel ? `linear-gradient(135deg, ${T.teal}, ${T.tealDark})` : T.bgCard,
       border: `2px solid ${sel ? T.white + '44' : T.border}`,
       borderRadius: 16,
       padding: '16px 24px',
-      minWidth: 220,
+      width: 280,
+      maxWidth: 280,
+      minHeight: 96,
+      boxSizing: 'border-box',
       cursor: 'pointer',
       backdropFilter: 'blur(10px)',
       boxShadow: sel
@@ -17,6 +22,16 @@ export default function RecipeNode({ data }) {
       transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
       transform: sel ? 'scale(1.05)' : 'scale(1)',
     }}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ width: 10, height: 10, borderRadius: 6, background: T.teal, border: `2px solid ${T.bg}` }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ width: 10, height: 10, borderRadius: 6, background: T.teal, border: `2px solid ${T.bg}` }}
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
         <div style={{
           width: 32, height: 32, borderRadius: 10,
@@ -28,7 +43,7 @@ export default function RecipeNode({ data }) {
           fontWeight: 800, fontSize: 16,
           color: sel ? T.white : T.teal,
           letterSpacing: 0.5,
-        }}>v{data.version}</div>
+        }}>v{version}</div>
       </div>
       <div style={{
         fontSize: 12, color: sel ? 'rgba(255,255,255,0.9)' : T.textMuted,
