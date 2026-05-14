@@ -385,35 +385,127 @@ public class HelmReleaseService {
         result.put("from", from);
         result.put("to", to);
 
-        List<Map<String, String>> diffs = new ArrayList<>();
+        Map<String, Recipe> fromByVersion = new LinkedHashMap<>();
+        for (Recipe r : safeRecipes(r1)) {
+            fromByVersion.put(r.getVersion(), r);
+        }
 
-        for (Recipe a : r1.getRecipes()) {
+        Map<String, Recipe> toByVersion = new LinkedHashMap<>();
+        for (Recipe r : safeRecipes(r2)) {
+            toByVersion.put(r.getVersion(), r);
+        }
 
-            Optional<Recipe> match = r2.getRecipes().stream()
-                    .filter(b -> b.getVersion().equals(a.getVersion()))
-                    .findFirst();
+        List<Map<String, Object>> recipesAdded = new ArrayList<>();
+        List<Map<String, Object>> recipesRemoved = new ArrayList<>();
+        List<Map<String, Object>> recipesChanged = new ArrayList<>();
 
-            if (match.isPresent()) {
-
-                Map<String, String> diff = new LinkedHashMap<>();
-
-                for (String comp : a.getComponents().keySet()) {
-
-                    String v1 = a.getComponents().get(comp);
-                    String v2 = match.get().getComponents().get(comp);
-
-                    if (!Objects.equals(v1, v2)) {
-                        diff.put(comp, v1 + " → " + v2);
-                    }
-                }
-
-                if (!diff.isEmpty()) diffs.add(diff);
+        for (String v : toByVersion.keySet()) {
+            if (!fromByVersion.containsKey(v)) {
+                Recipe r = toByVersion.get(v);
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("version", v);
+                entry.put("description", r.getDescription());
+                recipesAdded.add(entry);
             }
         }
 
-        result.put("differences", diffs);
+        for (String v : fromByVersion.keySet()) {
+            if (!toByVersion.containsKey(v)) {
+                Recipe r = fromByVersion.get(v);
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("version", v);
+                entry.put("description", r.getDescription());
+                recipesRemoved.add(entry);
+            }
+        }
+
+        for (String v : fromByVersion.keySet()) {
+            if (!toByVersion.containsKey(v)) continue;
+
+            Recipe a = fromByVersion.get(v);
+            Recipe b = toByVersion.get(v);
+
+            Map<String, Object> changes = new LinkedHashMap<>();
+            changes.put("version", v);
+
+            Map<String, String> compsFrom = safeComponents(a);
+            Map<String, String> compsTo = safeComponents(b);
+
+            Map<String, String> compsAdded = new LinkedHashMap<>();
+            Map<String, String> compsRemoved = new LinkedHashMap<>();
+            Map<String, Map<String, String>> compsChanged = new LinkedHashMap<>();
+
+            for (String comp : compsTo.keySet()) {
+                if (!compsFrom.containsKey(comp)) {
+                    compsAdded.put(comp, compsTo.get(comp));
+                }
+            }
+
+            for (String comp : compsFrom.keySet()) {
+                if (!compsTo.containsKey(comp)) {
+                    compsRemoved.put(comp, compsFrom.get(comp));
+                } else {
+                    String v1 = compsFrom.get(comp);
+                    String v2 = compsTo.get(comp);
+                    if (!Objects.equals(v1, v2)) {
+                        Map<String, String> change = new LinkedHashMap<>();
+                        change.put("from", v1);
+                        change.put("to", v2);
+                        compsChanged.put(comp, change);
+                    }
+                }
+            }
+
+            Map<String, Object> compChanges = new LinkedHashMap<>();
+            if (!compsAdded.isEmpty()) compChanges.put("added", compsAdded);
+            if (!compsRemoved.isEmpty()) compChanges.put("removed", compsRemoved);
+            if (!compsChanged.isEmpty()) compChanges.put("changed", compsChanged);
+            if (!compChanges.isEmpty()) changes.put("components", compChanges);
+
+            List<String> pathsFrom = safeUpgradePaths(a);
+            List<String> pathsTo = safeUpgradePaths(b);
+            Set<String> fromSet = new LinkedHashSet<>(pathsFrom);
+            Set<String> toSet = new LinkedHashSet<>(pathsTo);
+
+            List<String> pathsAdded = new ArrayList<>();
+            List<String> pathsRemoved = new ArrayList<>();
+
+            for (String p : toSet) {
+                if (!fromSet.contains(p)) pathsAdded.add(p);
+            }
+            for (String p : fromSet) {
+                if (!toSet.contains(p)) pathsRemoved.add(p);
+            }
+
+            if (!pathsAdded.isEmpty() || !pathsRemoved.isEmpty()) {
+                Map<String, Object> pathChanges = new LinkedHashMap<>();
+                if (!pathsAdded.isEmpty()) pathChanges.put("added", pathsAdded);
+                if (!pathsRemoved.isEmpty()) pathChanges.put("removed", pathsRemoved);
+                changes.put("upgradePaths", pathChanges);
+            }
+
+            if (changes.size() > 1) {
+                recipesChanged.add(changes);
+            }
+        }
+
+        result.put("recipesAdded", recipesAdded);
+        result.put("recipesRemoved", recipesRemoved);
+        result.put("recipesChanged", recipesChanged);
 
         return result;
+    }
+
+    private List<Recipe> safeRecipes(HelmRelease release) {
+        return release.getRecipes() != null ? release.getRecipes() : Collections.emptyList();
+    }
+
+    private Map<String, String> safeComponents(Recipe recipe) {
+        return recipe.getComponents() != null ? recipe.getComponents() : Collections.emptyMap();
+    }
+
+    private List<String> safeUpgradePaths(Recipe recipe) {
+        return recipe.getUpgradePaths() != null ? recipe.getUpgradePaths() : Collections.emptyList();
     }
 
     // ================= INTERNAL =================
