@@ -1,15 +1,17 @@
 recipeData:
   chartVersion: 0.0.8
   recipes:
-  - version: 1.7.9
+  - version: null
     description: Test1
     components:
       Kafka:
         version: 2.7.0
         upgrade_from:
         - 2.6.0
+        - 2.5.0
         upgrade_to:
         - 2.8.0
+        - 2.9.0
       mysql:
         version: 3.7.0
         upgrade_from:
