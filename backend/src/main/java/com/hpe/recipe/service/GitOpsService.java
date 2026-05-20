@@ -146,6 +146,33 @@ public class GitOpsService {
             }
             recipeMap.put("components", components);
 
+            Map<String, Object> componentRulesMap = new LinkedHashMap<>();
+
+            if (recipe.getComponentUpgradeRules() != null) {
+
+                recipe.getComponentUpgradeRules().forEach((componentName, rule) -> {
+
+                    Map<String, Object> ruleMap = new LinkedHashMap<>();
+
+                    List<String> fromVersions = new ArrayList<>();
+                    if (rule.getFrom() != null) {
+                        rule.getFrom().forEach(v -> fromVersions.add(quote(v)));
+                    }
+
+                    List<String> toVersions = new ArrayList<>();
+                    if (rule.getTo() != null) {
+                        rule.getTo().forEach(v -> toVersions.add(quote(v)));
+                    }
+
+                    ruleMap.put("from", fromVersions);
+                    ruleMap.put("to", toVersions);
+
+                    componentRulesMap.put(componentName, ruleMap);
+                });
+            }
+
+            recipeMap.put("componentUpgradeRules", componentRulesMap);
+
             List<String> paths = new ArrayList<>();
             if (recipe.getUpgradePaths() != null) {
                 recipe.getUpgradePaths().forEach(p -> paths.add(quote(p)));
