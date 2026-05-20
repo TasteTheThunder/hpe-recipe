@@ -6,8 +6,10 @@ const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version 
 export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }) {
   if (!recipe) return null;
   const comps = recipe.components ? Object.entries(recipe.components) : [];
-  const fromPaths = recipe.upgradePaths || [];
-  const toPaths = allRecipes.filter((r) => r.upgradePaths?.includes(recipe.version)).map((r) => r.version);
+  const fromPaths = allRecipes
+    .filter((r) => Array.isArray(r?.upgrade_to) && r.upgrade_to.includes(recipe.version))
+    .map((r) => r.version);
+  const toPaths = Array.isArray(recipe.upgrade_to) ? recipe.upgrade_to : [];
 
   return (
     <div style={{

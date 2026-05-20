@@ -4,7 +4,7 @@ export default function StatsBar({ release }) {
   if (!release) return null;
   const recipeCount = release.recipes?.length || 0;
   const compCount = release.recipes?.reduce((s, r) => s + Object.keys(r.components || {}).length, 0) || 0;
-  const pathCount = release.recipes?.reduce((s, r) => s + (r.upgradePaths?.length || 0), 0) || 0;
+  const pathCount = release.recipes?.reduce((s, r) => s + (r.upgrade_to?.length || 0), 0) || 0;
 
   const stats = [
     { label: 'Recipes', value: recipeCount, color: T.teal },

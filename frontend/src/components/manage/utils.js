@@ -19,19 +19,24 @@ function normalizeVersion(version) {
 }
 
 
-function getEffectiveUpgradePaths(recipes, recipe, recipeIndex) {
-  const explicit = Array.isArray(recipe.upgradePaths) ? recipe.upgradePaths.filter(Boolean) : [];
-  if (explicit.length > 0) return explicit;
-  if (recipeIndex > 0) {
-    const prevVersion = recipes[recipeIndex - 1]?.version;
-    if (prevVersion) return [prevVersion];
-  }
-  return [];
+function getRecipeUpgradeTo(recipe) {
+  const paths = Array.isArray(recipe?.upgrade_to) ? recipe.upgrade_to : [];
+  return paths.filter(Boolean);
+}
+
+function getRecipeUpgradeFrom(recipes, recipe) {
+  if (!recipes || !recipe) return [];
+  const targetVersion = recipe.version;
+  return recipes
+    .filter((r) => Array.isArray(r?.upgrade_to) && r.upgrade_to.includes(targetVersion))
+    .map((r) => r.version)
+    .filter(Boolean);
 }
 
 export {
   normalizeRecipeDescription,
   parseUpgradeList,
   normalizeVersion,
-  getEffectiveUpgradePaths,
+  getRecipeUpgradeTo,
+  getRecipeUpgradeFrom,
 };

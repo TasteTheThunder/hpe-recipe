@@ -40,10 +40,13 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     version: '',
     description: '',
+    releaseDate: '',
+    status: '',
+    releaseNotes: '',
     components: [
-      { name: '', version: '', upgradeFrom: '', upgradeTo: '' },
+      { name: '', version: '', releaseDate: '', upgradeFrom: '', upgradeTo: '' },
     ],
-    upgradePaths: [],
+    upgradeTo: [],
   });
 
   // Auto-generate release name from version
@@ -107,6 +110,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
     const components = Object.entries(recipe.components || {}).map(([name, spec]) => ({
       name,
       version: readVersion(spec),
+      releaseDate: spec?.release_date || '',
       upgradeFrom: readUpgradeList(spec, 'upgrade_from', 'upgradeFrom').join(', '),
       upgradeTo: readUpgradeList(spec, 'upgrade_to', 'upgradeTo').join(', '),
     }));
@@ -115,10 +119,13 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       version: recipe.version || '',
       description: recipe.description || '',
+      releaseDate: recipe.release_date || '',
+      status: recipe.status || '',
+      releaseNotes: recipe.release_notes || '',
       components: components.length > 0 ? components : [
-        { name: '', version: '', upgradeFrom: '', upgradeTo: '' },
+        { name: '', version: '', releaseDate: '', upgradeFrom: '', upgradeTo: '' },
       ],
-      upgradePaths: Array.isArray(recipe.upgradePaths) ? [...recipe.upgradePaths] : [],
+      upgradeTo: Array.isArray(recipe.upgrade_to) ? [...recipe.upgrade_to] : [],
     };
 
     setDraftRecipes((prev) => [...prev, imported]);
@@ -153,7 +160,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
   const addDraftComponent = (recipeId) => {
     setDraftRecipes((prev) => prev.map((r) => (
       r.id === recipeId
-        ? { ...r, components: [...r.components, { name: '', version: '', upgradeFrom: '', upgradeTo: '' }] }
+        ? { ...r, components: [...r.components, { name: '', version: '', releaseDate: '', upgradeFrom: '', upgradeTo: '' }] }
         : r
     )));
   };
@@ -165,13 +172,14 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
     }));
   };
 
-  const toggleDraftUpgradePath = (recipeId, fromVersion) => {
+  const toggleDraftUpgradeTo = (recipeId, toVersion, candidates) => {
     setDraftRecipes((prev) => prev.map((r) => {
       if (r.id !== recipeId) return r;
-      const exists = r.upgradePaths.includes(fromVersion);
+      const base = r.upgradeTo.length > 0 ? r.upgradeTo : candidates;
+      const exists = base.includes(toVersion);
       return {
         ...r,
-        upgradePaths: exists ? r.upgradePaths.filter((v) => v !== fromVersion) : [...r.upgradePaths, fromVersion],
+        upgradeTo: exists ? base.filter((v) => v !== toVersion) : [...base, toVersion],
       };
     }));
   };
@@ -206,6 +214,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
           const toList = parseUpgradeList(c.upgradeTo);
           compMap[compName] = {
             version: c.version.trim(),
+            ...(c.releaseDate.trim() ? { release_date: c.releaseDate.trim() } : {}),
             upgrade_from: fromList,
             upgrade_to: toList,
           };
@@ -217,18 +226,25 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
         return;
       }
 
-      const explicitUpgradePaths = recipe.upgradePaths
+      const explicitUpgradeTo = recipe.upgradeTo
         .map((p) => normalizeVersion(p))
         .filter((p) => Boolean(p) && p !== recipeVersion);
-      const validUpgradePaths = explicitUpgradePaths.length > 0
-        ? explicitUpgradePaths
-        : (idx > 0 ? [normalizeVersion(typedDrafts[idx - 1].version)] : []);
+      const laterVersions = typedDrafts
+        .slice(idx + 1)
+        .map((r) => normalizeVersion(r.version))
+        .filter((p) => Boolean(p) && p !== recipeVersion);
+      const validUpgradeTo = explicitUpgradeTo.length > 0
+        ? explicitUpgradeTo
+        : laterVersions;
 
       recipesPayload.push({
         version: recipeVersion,
         description: normalizeRecipeDescription(recipe.description, recipeVersion),
+        ...(recipe.releaseDate.trim() ? { release_date: recipe.releaseDate.trim() } : {}),
+        ...(recipe.status.trim() ? { status: recipe.status.trim() } : {}),
+        ...(recipe.releaseNotes.trim() ? { release_notes: recipe.releaseNotes.trim() } : {}),
         components: compMap,
-        upgradePaths: validUpgradePaths,
+        upgrade_to: validUpgradeTo,
       });
     }
 
@@ -400,9 +416,12 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
 
           {draftRecipes.map((recipe, recipeIndex) => {
             const upgradeCandidates = draftRecipes
-              .slice(0, recipeIndex)
+              .slice(recipeIndex + 1)
               .filter((r) => r.version.trim())
               .map((r) => r.version.trim());
+            const effectiveUpgradeTo = recipe.upgradeTo.length > 0
+              ? recipe.upgradeTo
+              : upgradeCandidates;
                 const isExpanded = expandedRecipeIds.includes(recipe.id);
 
             return (
@@ -437,7 +456,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
 
                     {isExpanded && (
                       <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div>
                     <label style={labelStyle}>Recipe Version</label>
                     <input
@@ -448,12 +467,42 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                     />
                   </div>
                   <div>
+                    <label style={labelStyle}>Release Date</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="YYYY-MM-DD"
+                      value={recipe.releaseDate}
+                      onChange={(e) => updateRecipeDraft(recipe.id, 'releaseDate', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Status</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="GA, Beta, Deprecated"
+                      value={recipe.status}
+                      onChange={(e) => updateRecipeDraft(recipe.id, 'status', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 10 }}>
+                  <div>
                     <label style={labelStyle}>Description</label>
                     <input
                       style={inputStyle}
                       placeholder="e.g. Patch release with minor upgrades"
                       value={recipe.description}
                       onChange={(e) => updateRecipeDraft(recipe.id, 'description', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Release Notes</label>
+                    <input
+                      style={inputStyle}
+                      placeholder="Improved Kafka scalability and Spark optimization"
+                      value={recipe.releaseNotes}
+                      onChange={(e) => updateRecipeDraft(recipe.id, 'releaseNotes', e.target.value)}
                     />
                   </div>
                 </div>
@@ -463,7 +512,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                   {recipe.components.map((c, i) => (
                     <div key={`${recipe.id}-${i}`} style={{
                       display: 'grid',
-                      gridTemplateColumns: '1fr 1fr 1fr 1.3fr auto',
+                      gridTemplateColumns: '1fr 1fr 1fr 1fr 1.3fr auto',
                       gap: 12,
                       alignItems: 'center',
                     }}>
@@ -478,6 +527,12 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                         placeholder="Version"
                         value={c.version}
                         onChange={(e) => updateDraftComponent(recipe.id, i, 'version', e.target.value)}
+                      />
+                      <input
+                        style={inputStyle}
+                        placeholder="Release Date"
+                        value={c.releaseDate || ''}
+                        onChange={(e) => updateDraftComponent(recipe.id, i, 'releaseDate', e.target.value)}
                       />
                       <input
                         style={inputStyle}
@@ -513,18 +568,18 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
 
                 {upgradeCandidates.length > 0 && (
                   <>
-                    <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade From</label>
+                    <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade To</label>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {upgradeCandidates.map((v) => (
                         <button
                           key={`${recipe.id}-${v}`}
                           type="button"
-                          onClick={() => toggleDraftUpgradePath(recipe.id, v)}
+                          onClick={() => toggleDraftUpgradeTo(recipe.id, v, upgradeCandidates)}
                           style={{
                             padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                            background: recipe.upgradePaths.includes(v) ? `${T.teal}22` : T.bgSurface,
-                            color: recipe.upgradePaths.includes(v) ? T.teal : T.textMuted,
-                            border: `1px solid ${recipe.upgradePaths.includes(v) ? T.teal : T.border}`,
+                            background: effectiveUpgradeTo.includes(v) ? `${T.teal}22` : T.bgSurface,
+                            color: effectiveUpgradeTo.includes(v) ? T.teal : T.textMuted,
+                            border: `1px solid ${effectiveUpgradeTo.includes(v) ? T.teal : T.border}`,
                             cursor: 'pointer',
                           }}
                         >

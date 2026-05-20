@@ -29,7 +29,7 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
       upgradeTo: readUpgradeList(spec, 'upgrade_to', 'upgradeTo').join(', '),
     }))
   );
-  const [upgradePaths, setUpgradePaths] = useState([...(recipe.upgradePaths || [])]);
+  const [upgradeTo, setUpgradeTo] = useState([...(recipe.upgrade_to || [])]);
 
   const updateComp = (i, field, val) => {
     const next = [...components];
@@ -41,7 +41,7 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
   const removeComponent = (i) => setComponents(components.filter((_, j) => j !== i));
 
   const toggleUpgrade = (rv) => {
-    setUpgradePaths((prev) => prev.includes(rv) ? prev.filter((p) => p !== rv) : [...prev, rv]);
+    setUpgradeTo((prev) => prev.includes(rv) ? prev.filter((p) => p !== rv) : [...prev, rv]);
   };
 
   const handleSave = () => {
@@ -59,12 +59,12 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
       }
     });
     const recipeVersion = normalizeVersion(recipe.version);
-    const normalizedUpgradePaths = upgradePaths.map((p) => normalizeVersion(p)).filter(Boolean);
+    const normalizedUpgradeTo = upgradeTo.map((p) => normalizeVersion(p)).filter(Boolean);
     onSave({
       version: recipeVersion,
       description: normalizeRecipeDescription(description, recipeVersion),
       components: compMap,
-      upgradePaths: normalizedUpgradePaths,
+      upgrade_to: normalizedUpgradeTo,
     });
   };
 
@@ -104,14 +104,14 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
 
       {otherRecipes.length > 0 && (
         <>
-          <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade From</label>
+          <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade To</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
             {otherRecipes.map((r) => (
               <button key={r.version} type="button" onClick={() => toggleUpgrade(r.version)} style={{
                 padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                background: upgradePaths.includes(r.version) ? `${T.teal}22` : T.bgCard,
-                color: upgradePaths.includes(r.version) ? T.teal : T.textMuted,
-                border: `1px solid ${upgradePaths.includes(r.version) ? T.teal : T.border}`,
+                background: upgradeTo.includes(r.version) ? `${T.teal}22` : T.bgCard,
+                color: upgradeTo.includes(r.version) ? T.teal : T.textMuted,
+                border: `1px solid ${upgradeTo.includes(r.version) ? T.teal : T.border}`,
                 cursor: 'pointer',
               }}>v{r.version}</button>
             ))}

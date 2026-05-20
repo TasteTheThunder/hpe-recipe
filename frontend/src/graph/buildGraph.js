@@ -22,12 +22,12 @@ export default function buildGraph(recipes, selectedRecipeVersion) {
 
   // Upgrade edges
   recipes.forEach((recipe) => {
-    (recipe.upgradePaths || []).forEach((from) => {
-      if (recipes.some((r) => r.version === from)) {
+    (recipe.upgrade_to || []).forEach((to) => {
+      if (recipes.some((r) => r.version === to)) {
         edges.push({
-          id: `upgrade-${from}-${recipe.version}`,
-          source: `recipe-${from}`,
-          target: `recipe-${recipe.version}`,
+          id: `upgrade-${recipe.version}-${to}`,
+          source: `recipe-${recipe.version}`,
+          target: `recipe-${to}`,
           type: 'smoothstep',
           animated: true,
           style: { stroke: T.teal, strokeWidth: 3, opacity: 0.8 },

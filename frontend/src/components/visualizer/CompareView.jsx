@@ -51,7 +51,7 @@ export default function CompareView({ releases, currentVersion, cluster, onClose
       ) : (
         items.map((rec) => {
           const comp = rec.components || {};
-          const up = rec.upgradePaths || {};
+          const up = rec.upgrade_to || {};
           const addedComps = comp.added ? Object.entries(comp.added).map(([k, v]) => `+ ${k}: ${v}`) : [];
           const removedComps = comp.removed ? Object.entries(comp.removed).map(([k, v]) => `- ${k}: ${v}`) : [];
           const changedComps = comp.changed
@@ -80,7 +80,7 @@ export default function CompareView({ releases, currentVersion, cluster, onClose
               {(upAdded.length + upRemoved.length) > 0 && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>
-                    Upgrade Paths
+                    Upgrade To
                   </div>
                   {renderList([...upAdded, ...upRemoved])}
                 </div>

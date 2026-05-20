@@ -1,5 +1,7 @@
 package com.hpe.recipe.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Map;
 
@@ -7,16 +9,34 @@ public class Recipe {
 
     private String version;
     private String description;
+    @JsonProperty("release_date")
+    private String releaseDate;
+    private String status;
+    @JsonProperty("release_notes")
+    private String releaseNotes;
     private Map<String, ComponentSpec> components;
-    private List<String> upgradePaths;
+    @JsonProperty("upgrade_to")
+    @JsonAlias({"upgradePaths", "upgradeTo", "upgrade_to"})
+    private List<String> upgradeTo;
 
     public Recipe() {}
 
-    public Recipe(String version, String description, Map<String, ComponentSpec> components, List<String> upgradePaths) {
+    public Recipe(String version, String description, Map<String, ComponentSpec> components, List<String> upgradeTo) {
         this.version = version;
         this.description = description;
         this.components = components;
-        this.upgradePaths = upgradePaths;
+        this.upgradeTo = upgradeTo;
+    }
+
+    public Recipe(String version, String description, String releaseDate, String status, String releaseNotes,
+                  Map<String, ComponentSpec> components, List<String> upgradeTo) {
+        this.version = version;
+        this.description = description;
+        this.releaseDate = releaseDate;
+        this.status = status;
+        this.releaseNotes = releaseNotes;
+        this.components = components;
+        this.upgradeTo = upgradeTo;
     }
 
     public String getVersion() { return version; }
@@ -25,10 +45,19 @@ public class Recipe {
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
 
+    public String getReleaseDate() { return releaseDate; }
+    public void setReleaseDate(String releaseDate) { this.releaseDate = releaseDate; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getReleaseNotes() { return releaseNotes; }
+    public void setReleaseNotes(String releaseNotes) { this.releaseNotes = releaseNotes; }
+
     public Map<String, ComponentSpec> getComponents() { return components; }
     public void setComponents(Map<String, ComponentSpec> components) { this.components = components; }
 
-    public List<String> getUpgradePaths() { return upgradePaths; }
-    public void setUpgradePaths(List<String> upgradePaths) { this.upgradePaths = upgradePaths; }
+    public List<String> getUpgradeTo() { return upgradeTo; }
+    public void setUpgradeTo(List<String> upgradeTo) { this.upgradeTo = upgradeTo; }
 
 }

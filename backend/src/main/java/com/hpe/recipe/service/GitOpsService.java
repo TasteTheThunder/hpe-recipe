@@ -125,7 +125,7 @@ public class GitOpsService {
      *       description: "..."
      *       components:
      *         spark: "3.5.0"
-     *       upgradePaths:
+    *       upgrade_to:
      *         - "1.5.0"
      */
     String generateValuesYaml(HelmRelease release) {
@@ -140,12 +140,24 @@ public class GitOpsService {
             Map<String, Object> recipeMap = new LinkedHashMap<>();
             recipeMap.put("version", quote(normalizeVersion(recipe.getVersion())));
             recipeMap.put("description", quote(recipe.getDescription()));
+            if (recipe.getReleaseDate() != null && !recipe.getReleaseDate().isBlank()) {
+                recipeMap.put("release_date", quote(recipe.getReleaseDate()));
+            }
+            if (recipe.getStatus() != null && !recipe.getStatus().isBlank()) {
+                recipeMap.put("status", quote(recipe.getStatus()));
+            }
+            if (recipe.getReleaseNotes() != null && !recipe.getReleaseNotes().isBlank()) {
+                recipeMap.put("release_notes", quote(recipe.getReleaseNotes()));
+            }
 
             Map<String, Object> components = new LinkedHashMap<>();
             if (recipe.getComponents() != null) {
                 recipe.getComponents().forEach((name, spec) -> {
                     Map<String, Object> compMap = new LinkedHashMap<>();
                     compMap.put("version", quote(spec.getVersion()));
+                    if (spec.getReleaseDate() != null && !spec.getReleaseDate().isBlank()) {
+                        compMap.put("release_date", quote(spec.getReleaseDate()));
+                    }
                     compMap.put("upgrade_from", quoteAll(spec.getUpgradeFrom()));
                     compMap.put("upgrade_to", quoteAll(spec.getUpgradeTo()));
                     components.put(name, compMap);
@@ -154,15 +166,17 @@ public class GitOpsService {
             recipeMap.put("components", components);
 
             List<String> paths = new ArrayList<>();
-            if (recipe.getUpgradePaths() != null) {
-                recipe.getUpgradePaths().forEach(p -> {
+            if (recipe.getUpgradeTo() != null) {
+                recipe.getUpgradeTo().forEach(p -> {
                     String normalized = normalizeVersion(p);
                     if (normalized != null && !normalized.isBlank()) {
                         paths.add(quote(normalized));
                     }
                 });
             }
-            recipeMap.put("upgradePaths", paths);
+            if (!paths.isEmpty()) {
+                recipeMap.put("upgrade_to", paths);
+            }
             recipeMaps.add(recipeMap);
         }
 
@@ -175,7 +189,6 @@ public class GitOpsService {
 
         String dumped = yaml.dump(root);
         dumped = dumped.replaceAll("(?s)(upgrade_from|upgrade_to):\\s*\\[\\s*\\]", "$1: []");
-        dumped = dumped.replaceAll("(?s)upgradePaths:\\s*\\[\\s*\\]", "upgradePaths: []");
         return dumped;
     }
 

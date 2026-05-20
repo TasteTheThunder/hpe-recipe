@@ -80,10 +80,13 @@ public class HelmReleaseService {
                 Recipe r = new Recipe();
                 r.setVersion(recipe.getVersion());
                 r.setDescription(recipe.getDescription());
+                r.setReleaseDate(recipe.getReleaseDate());
+                r.setStatus(recipe.getStatus());
+                r.setReleaseNotes(recipe.getReleaseNotes());
                 r.setComponents(copyComponents(recipe.getComponents()));
-                r.setUpgradePaths(recipe.getUpgradePaths() == null
+                r.setUpgradeTo(recipe.getUpgradeTo() == null
                         ? new ArrayList<>()
-                        : new ArrayList<>(recipe.getUpgradePaths()));
+                    : new ArrayList<>(recipe.getUpgradeTo()));
                 copiedRecipes.add(r);
             }
         }
@@ -137,6 +140,8 @@ public class HelmReleaseService {
                 String status = root.has("status") ? root.get("status").asText() : "deployed";
 
             List<Recipe> recipes = new ArrayList<>();
+            Map<String, List<String>> legacyFromByTarget = new LinkedHashMap<>();
+            boolean hasExplicitUpgradeTo = false;
 
             for (JsonNode rNode : root.get("recipes")) {
 
@@ -148,11 +153,13 @@ public class HelmReleaseService {
                         String name = e.getKey();
                         JsonNode compNode = e.getValue();
                         String versionValue = null;
+                        String releaseDate = null;
                         List<String> upgradeFrom = new ArrayList<>();
                         List<String> upgradeTo = new ArrayList<>();
 
                         if (compNode != null && compNode.isObject()) {
                             versionValue = readText(compNode, "version");
+                            releaseDate = readText(compNode, "release_date");
                             upgradeFrom = readStringList(
                                     readFirst(compNode, "upgrade_from", "upgradeFrom"));
                             upgradeTo = readStringList(
@@ -168,22 +175,52 @@ public class HelmReleaseService {
                             }
                         }
 
-                        components.put(name, new ComponentSpec(versionValue, upgradeFrom, upgradeTo));
+                        components.put(name, new ComponentSpec(versionValue, releaseDate, upgradeFrom, upgradeTo));
                     });
                 }
 
-                List<String> upgradePaths = new ArrayList<>();
-                rNode.get("upgradePaths").forEach(p -> {
-                    String normalized = normalizeVersion(p.asText());
-                    if (normalized != null && !normalized.isBlank()) upgradePaths.add(normalized);
-                });
+                String versionValue = normalizeVersion(rNode.get("version").asText());
+                List<String> upgradeTo = normalizeVersions(
+                        readStringList(readFirst(rNode, "upgrade_to", "upgradeTo")));
+                if (!upgradeTo.isEmpty()) {
+                    hasExplicitUpgradeTo = true;
+                }
+
+                List<String> legacyFrom = normalizeVersions(readStringList(rNode.get("upgradePaths")));
+                if (!legacyFrom.isEmpty()) {
+                    legacyFromByTarget.put(versionValue, legacyFrom);
+                }
 
                 recipes.add(new Recipe(
-                    normalizeVersion(rNode.get("version").asText()),
-                        rNode.has("description") ? rNode.get("description").asText() : "",
-                        components,
-                        upgradePaths
+                    versionValue,
+                    rNode.has("description") ? rNode.get("description").asText() : "",
+                    rNode.has("release_date") ? rNode.get("release_date").asText() : "",
+                    rNode.has("status") ? rNode.get("status").asText() : "",
+                    rNode.has("release_notes") ? rNode.get("release_notes").asText() : "",
+                    components,
+                    upgradeTo
                 ));
+            }
+
+            if (!hasExplicitUpgradeTo && !legacyFromByTarget.isEmpty()) {
+                Map<String, Recipe> byVersion = recipes.stream()
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toMap(Recipe::getVersion, r -> r, (a, b) -> a, LinkedHashMap::new));
+                for (Map.Entry<String, List<String>> entry : legacyFromByTarget.entrySet()) {
+                    String targetVersion = entry.getKey();
+                    for (String fromVersion : entry.getValue()) {
+                        Recipe source = byVersion.get(fromVersion);
+                        if (source == null) continue;
+                        List<String> upgradeTo = source.getUpgradeTo();
+                        if (upgradeTo == null) {
+                            upgradeTo = new ArrayList<>();
+                            source.setUpgradeTo(upgradeTo);
+                        }
+                        if (!upgradeTo.contains(targetVersion)) {
+                            upgradeTo.add(targetVersion);
+                        }
+                    }
+                }
             }
 
             return new HelmRelease(version, releaseName, status, cluster, recipes);
@@ -406,7 +443,7 @@ public class HelmReleaseService {
         return r.getRecipes().stream()
                 .filter(x -> x.getVersion().equals(recipeVersion))
                 .findFirst()
-                .map(Recipe::getUpgradePaths)
+                .map(Recipe::getUpgradeTo)
                 .orElse(Collections.emptyList());
     }
 
@@ -500,8 +537,8 @@ public class HelmReleaseService {
             if (!compsChanged.isEmpty()) compChanges.put("changed", compsChanged);
             if (!compChanges.isEmpty()) changes.put("components", compChanges);
 
-            List<String> pathsFrom = safeUpgradePaths(a);
-            List<String> pathsTo = safeUpgradePaths(b);
+            List<String> pathsFrom = safeUpgradeTo(a);
+            List<String> pathsTo = safeUpgradeTo(b);
             Set<String> fromSet = new LinkedHashSet<>(pathsFrom);
             Set<String> toSet = new LinkedHashSet<>(pathsTo);
 
@@ -519,7 +556,7 @@ public class HelmReleaseService {
                 Map<String, Object> pathChanges = new LinkedHashMap<>();
                 if (!pathsAdded.isEmpty()) pathChanges.put("added", pathsAdded);
                 if (!pathsRemoved.isEmpty()) pathChanges.put("removed", pathsRemoved);
-                changes.put("upgradePaths", pathChanges);
+                changes.put("upgrade_to", pathChanges);
             }
 
             if (changes.size() > 1) {
@@ -542,8 +579,24 @@ public class HelmReleaseService {
         return recipe.getComponents() != null ? recipe.getComponents() : Collections.emptyMap();
     }
 
-    private List<String> safeUpgradePaths(Recipe recipe) {
-        return recipe.getUpgradePaths() != null ? recipe.getUpgradePaths() : Collections.emptyList();
+    private List<String> safeUpgradeTo(Recipe recipe) {
+        return recipe.getUpgradeTo() != null ? recipe.getUpgradeTo() : Collections.emptyList();
+    }
+
+    private List<String> getUpgradeFromVersions(List<Recipe> recipes, Recipe target) {
+        if (recipes == null || target == null || target.getVersion() == null) {
+            return Collections.emptyList();
+        }
+        List<String> fromVersions = new ArrayList<>();
+        String targetVersion = target.getVersion();
+        for (Recipe recipe : recipes) {
+            if (recipe == null) continue;
+            List<String> upgradeTo = safeUpgradeTo(recipe);
+            if (upgradeTo.contains(targetVersion)) {
+                fromVersions.add(recipe.getVersion());
+            }
+        }
+        return fromVersions;
     }
 
     private Map<String, ComponentSpec> copyComponents(Map<String, ComponentSpec> components) {
@@ -554,6 +607,7 @@ public class HelmReleaseService {
             if (spec == null) continue;
             copy.put(entry.getKey(), new ComponentSpec(
                     spec.getVersion(),
+                    spec.getReleaseDate(),
                     spec.getUpgradeFrom(),
                     spec.getUpgradeTo()
             ));
@@ -587,6 +641,7 @@ public class HelmReleaseService {
                 }
                 byVersion.put(compVersion, new ComponentSpec(
                         compVersion,
+                    spec.getReleaseDate(),
                         spec.getUpgradeFrom(),
                         spec.getUpgradeTo()
                 ));
@@ -594,7 +649,7 @@ public class HelmReleaseService {
         }
 
         for (Recipe target : recipes) {
-            List<String> fromVersions = safeUpgradePaths(target);
+            List<String> fromVersions = getUpgradeFromVersions(recipes, target);
             if (fromVersions.isEmpty()) continue;
 
             for (String fromVersion : fromVersions) {
@@ -661,6 +716,9 @@ public class HelmReleaseService {
             if (spec == null) continue;
             Map<String, Object> specMap = new LinkedHashMap<>();
             specMap.put("version", spec.getVersion());
+            if (spec.getReleaseDate() != null && !spec.getReleaseDate().isBlank()) {
+                specMap.put("release_date", spec.getReleaseDate());
+            }
             specMap.put("upgrade_from", safeList(spec.getUpgradeFrom()));
             specMap.put("upgrade_to", safeList(spec.getUpgradeTo()));
             payload.put(entry.getKey(), specMap);
@@ -759,8 +817,20 @@ public class HelmReleaseService {
                 Map<String, Object> map = new LinkedHashMap<>();
                 map.put("version", normalizeVersion(r.getVersion()));
                 map.put("description", r.getDescription());
+                if (r.getReleaseDate() != null && !r.getReleaseDate().isBlank()) {
+                    map.put("release_date", r.getReleaseDate());
+                }
+                if (r.getStatus() != null && !r.getStatus().isBlank()) {
+                    map.put("status", r.getStatus());
+                }
+                if (r.getReleaseNotes() != null && !r.getReleaseNotes().isBlank()) {
+                    map.put("release_notes", r.getReleaseNotes());
+                }
                 map.put("components", buildComponentPayload(r.getComponents()));
-                map.put("upgradePaths", normalizeVersions(r.getUpgradePaths()));
+                List<String> upgradeTo = normalizeVersions(r.getUpgradeTo());
+                if (!upgradeTo.isEmpty()) {
+                    map.put("upgrade_to", upgradeTo);
+                }
 
                 recipes.add(map);
             }

@@ -8,7 +8,7 @@ import {
   labelStyle,
 } from '../../ui/styles';
 import EditRecipeInline from './EditRecipeInline';
-import { normalizeRecipeDescription, getEffectiveUpgradePaths } from './utils';
+import { normalizeRecipeDescription, getRecipeUpgradeFrom, getRecipeUpgradeTo } from './utils';
 
 const API_BASE = '/api';
 
@@ -176,8 +176,8 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
 
           {recipes.map((recipe) => (
             (() => {
-              const recipeIndex = recipes.findIndex((r) => r.version === recipe.version);
-              const effectiveFromPaths = getEffectiveUpgradePaths(recipes, recipe, recipeIndex);
+              const fromPaths = getRecipeUpgradeFrom(recipes, recipe);
+              const toPaths = getRecipeUpgradeTo(recipe);
               return (
             <div key={recipe.version} style={{
               background: T.bgSurface, border: `1px solid ${T.border}`,
@@ -211,10 +211,8 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                     {Object.entries(recipe.components || {}).map(([name, spec]) => {
                       const ver = readVersion(spec);
-                      const fromPaths = effectiveFromPaths;
-                      const toPaths = recipes
-                        .filter((r, idx) => getEffectiveUpgradePaths(recipes, r, idx).includes(recipe.version))
-                        .map((r) => r.version);
+                      const fromPaths = getRecipeUpgradeFrom(recipes, recipe);
+                      const toPaths = getRecipeUpgradeTo(recipe);
 
                       const prevVers = fromPaths.map((pv) => {
                         const pr = recipes.find((r) => r.version === pv);
@@ -247,10 +245,10 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
 
                   {/* Upgrade paths info */}
                   <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {effectiveFromPaths.length > 0 && (
+                    {fromPaths.length > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, color: T.textMuted }}>Upgrades from:</span>
-                        {effectiveFromPaths.map((p) => (
+                        {fromPaths.map((p) => (
                           <span key={p} style={{
                             padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
                             background: `${T.blue}15`, color: T.blue,
@@ -258,14 +256,14 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
                         ))}
                       </div>
                     )}
-                    {recipes.filter((r, idx) => getEffectiveUpgradePaths(recipes, r, idx).includes(recipe.version)).length > 0 && (
+                    {toPaths.length > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, color: T.textMuted }}>Upgrades to:</span>
-                        {recipes.filter((r, idx) => getEffectiveUpgradePaths(recipes, r, idx).includes(recipe.version)).map((p) => (
-                          <span key={p.version} style={{
+                        {toPaths.map((p) => (
+                          <span key={p} style={{
                             padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
                             background: `${T.yellow}15`, color: T.yellow,
-                          }}>v{p.version}</span>
+                          }}>v{p}</span>
                         ))}
                       </div>
                     )}
