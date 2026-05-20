@@ -8,6 +8,8 @@ recipeData:
       hbase: 3.5.1
       kafka: 2.8.0
       spark: 2.8.0
+    componentUpgradeRules: {
+      }
     upgradePaths:
     - 1.1.0
   - version: 1.3.0
@@ -17,5 +19,7 @@ recipeData:
       hbase: 3.5.2
       kafka: 2.9.0
       spark: 2.9.0
+    componentUpgradeRules: {
+      }
     upgradePaths:
     - 1.2.0
