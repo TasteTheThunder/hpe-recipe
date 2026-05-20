@@ -2,7 +2,7 @@ package com.hpe.recipe.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hpe.recipe.model.ComponentUpgradeRule;
+import com.hpe.recipe.model.ComponentSpec;
 import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
 import io.fabric8.kubernetes.api.model.ConfigMap;
@@ -80,13 +80,10 @@ public class HelmReleaseService {
                 Recipe r = new Recipe();
                 r.setVersion(recipe.getVersion());
                 r.setDescription(recipe.getDescription());
-                r.setComponents(recipe.getComponents() == null
-                        ? new LinkedHashMap<>()
-                        : new LinkedHashMap<>(recipe.getComponents()));
+                r.setComponents(copyComponents(recipe.getComponents()));
                 r.setUpgradePaths(recipe.getUpgradePaths() == null
                         ? new ArrayList<>()
                         : new ArrayList<>(recipe.getUpgradePaths()));
-                r.setComponentUpgradeRules(copyComponentUpgradeRules(recipe.getComponentUpgradeRules()));
                 copiedRecipes.add(r);
             }
         }
@@ -143,39 +140,49 @@ public class HelmReleaseService {
 
             for (JsonNode rNode : root.get("recipes")) {
 
-                Map<String, String> components = new LinkedHashMap<>();
-                rNode.get("components").fields().forEachRemaining(
-                        e -> components.put(e.getKey(), e.getValue().asText()));
+                Map<String, ComponentSpec> components = new LinkedHashMap<>();
+                JsonNode componentsNode = rNode.get("components");
+                JsonNode legacyRulesNode = rNode.get("componentUpgradeRules");
+                if (componentsNode != null && componentsNode.isObject()) {
+                    componentsNode.fields().forEachRemaining(e -> {
+                        String name = e.getKey();
+                        JsonNode compNode = e.getValue();
+                        String versionValue = null;
+                        List<String> upgradeFrom = new ArrayList<>();
+                        List<String> upgradeTo = new ArrayList<>();
 
-                List<String> upgradePaths = new ArrayList<>();
-                rNode.get("upgradePaths").forEach(p -> upgradePaths.add(p.asText()));
+                        if (compNode != null && compNode.isObject()) {
+                            versionValue = readText(compNode, "version");
+                            upgradeFrom = readStringList(
+                                    readFirst(compNode, "upgrade_from", "upgradeFrom"));
+                            upgradeTo = readStringList(
+                                    readFirst(compNode, "upgrade_to", "upgradeTo"));
+                        } else if (compNode != null && compNode.isTextual()) {
+                            versionValue = compNode.asText();
+                            if (legacyRulesNode != null && legacyRulesNode.isObject()) {
+                                JsonNode legacyRule = legacyRulesNode.get(name);
+                                if (legacyRule != null && legacyRule.isObject()) {
+                                    upgradeFrom = readStringList(legacyRule.get("from"));
+                                    upgradeTo = readStringList(legacyRule.get("to"));
+                                }
+                            }
+                        }
 
-                Map<String, ComponentUpgradeRule> componentUpgradeRules = new LinkedHashMap<>();
-                JsonNode rulesNode = rNode.get("componentUpgradeRules");
-                if (rulesNode != null && rulesNode.isObject()) {
-                    rulesNode.fields().forEachRemaining(entry -> {
-                        String compName = entry.getKey();
-                        JsonNode ruleNode = entry.getValue();
-                        List<String> from = new ArrayList<>();
-                        List<String> to = new ArrayList<>();
-                        JsonNode fromNode = ruleNode.get("from");
-                        if (fromNode != null && fromNode.isArray()) {
-                            fromNode.forEach(v -> from.add(v.asText()));
-                        }
-                        JsonNode toNode = ruleNode.get("to");
-                        if (toNode != null && toNode.isArray()) {
-                            toNode.forEach(v -> to.add(v.asText()));
-                        }
-                        componentUpgradeRules.put(compName, new ComponentUpgradeRule(from, to));
+                        components.put(name, new ComponentSpec(versionValue, upgradeFrom, upgradeTo));
                     });
                 }
 
+                List<String> upgradePaths = new ArrayList<>();
+                rNode.get("upgradePaths").forEach(p -> {
+                    String normalized = normalizeVersion(p.asText());
+                    if (normalized != null && !normalized.isBlank()) upgradePaths.add(normalized);
+                });
+
                 recipes.add(new Recipe(
-                        rNode.get("version").asText(),
+                    normalizeVersion(rNode.get("version").asText()),
                         rNode.has("description") ? rNode.get("description").asText() : "",
                         components,
-                        upgradePaths,
-                        componentUpgradeRules
+                        upgradePaths
                 ));
             }
 
@@ -339,6 +346,7 @@ public class HelmReleaseService {
         if (r == null) return null;
 
         r.getRecipes().add(recipe);
+        storeDraft(cluster, r);
         updateConfigMap(cluster, version, r);
 
         return recipe;
@@ -351,7 +359,11 @@ public class HelmReleaseService {
 
         for (int i = 0; i < r.getRecipes().size(); i++) {
             if (r.getRecipes().get(i).getVersion().equals(recipeVersion)) {
+                if (recipe != null && (recipe.getVersion() == null || recipe.getVersion().isBlank())) {
+                    recipe.setVersion(recipeVersion);
+                }
                 r.getRecipes().set(i, recipe);
+                storeDraft(cluster, r);
                 updateConfigMap(cluster, version, r);
                 return recipe;
             }
@@ -366,12 +378,15 @@ public class HelmReleaseService {
 
         boolean removed = r.getRecipes().removeIf(x -> x.getVersion().equals(recipeVersion));
 
-        if (removed) updateConfigMap(cluster, version, r);
+        if (removed) {
+            storeDraft(cluster, r);
+            updateConfigMap(cluster, version, r);
+        }
 
         return removed;
     }
 
-    public Map<String, String> getComponentsByRecipe(String cluster, String version, String recipeVersion) {
+    public Map<String, ComponentSpec> getComponentsByRecipe(String cluster, String version, String recipeVersion) {
 
         HelmRelease r = getHelmRelease(cluster, version);
         if (r == null) return Collections.emptyMap();
@@ -451,8 +466,8 @@ public class HelmReleaseService {
             Map<String, Object> changes = new LinkedHashMap<>();
             changes.put("version", v);
 
-            Map<String, String> compsFrom = safeComponents(a);
-            Map<String, String> compsTo = safeComponents(b);
+            Map<String, ComponentSpec> compsFrom = safeComponents(a);
+            Map<String, ComponentSpec> compsTo = safeComponents(b);
 
             Map<String, String> compsAdded = new LinkedHashMap<>();
             Map<String, String> compsRemoved = new LinkedHashMap<>();
@@ -460,16 +475,16 @@ public class HelmReleaseService {
 
             for (String comp : compsTo.keySet()) {
                 if (!compsFrom.containsKey(comp)) {
-                    compsAdded.put(comp, compsTo.get(comp));
+                    compsAdded.put(comp, componentVersion(compsTo.get(comp)));
                 }
             }
 
             for (String comp : compsFrom.keySet()) {
                 if (!compsTo.containsKey(comp)) {
-                    compsRemoved.put(comp, compsFrom.get(comp));
+                    compsRemoved.put(comp, componentVersion(compsFrom.get(comp)));
                 } else {
-                    String v1 = compsFrom.get(comp);
-                    String v2 = compsTo.get(comp);
+                    String v1 = componentVersion(compsFrom.get(comp));
+                    String v2 = componentVersion(compsTo.get(comp));
                     if (!Objects.equals(v1, v2)) {
                         Map<String, String> change = new LinkedHashMap<>();
                         change.put("from", v1);
@@ -523,7 +538,7 @@ public class HelmReleaseService {
         return release.getRecipes() != null ? release.getRecipes() : Collections.emptyList();
     }
 
-    private Map<String, String> safeComponents(Recipe recipe) {
+    private Map<String, ComponentSpec> safeComponents(Recipe recipe) {
         return recipe.getComponents() != null ? recipe.getComponents() : Collections.emptyMap();
     }
 
@@ -531,18 +546,17 @@ public class HelmReleaseService {
         return recipe.getUpgradePaths() != null ? recipe.getUpgradePaths() : Collections.emptyList();
     }
 
-    private Map<String, ComponentUpgradeRule> safeComponentUpgradeRules(Recipe recipe) {
-        return recipe.getComponentUpgradeRules() != null ? recipe.getComponentUpgradeRules() : Collections.emptyMap();
-    }
-
-    private Map<String, ComponentUpgradeRule> copyComponentUpgradeRules(
-            Map<String, ComponentUpgradeRule> rules) {
-        if (rules == null) return new LinkedHashMap<>();
-        Map<String, ComponentUpgradeRule> copy = new LinkedHashMap<>();
-        for (Map.Entry<String, ComponentUpgradeRule> entry : rules.entrySet()) {
-            ComponentUpgradeRule rule = entry.getValue();
-            if (rule == null) continue;
-            copy.put(entry.getKey(), new ComponentUpgradeRule(rule.getFrom(), rule.getTo()));
+    private Map<String, ComponentSpec> copyComponents(Map<String, ComponentSpec> components) {
+        if (components == null) return new LinkedHashMap<>();
+        Map<String, ComponentSpec> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, ComponentSpec> entry : components.entrySet()) {
+            ComponentSpec spec = entry.getValue();
+            if (spec == null) continue;
+            copy.put(entry.getKey(), new ComponentSpec(
+                    spec.getVersion(),
+                    spec.getUpgradeFrom(),
+                    spec.getUpgradeTo()
+            ));
         }
         return copy;
     }
@@ -555,24 +569,27 @@ public class HelmReleaseService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(Recipe::getVersion, r -> r, (a, b) -> a, LinkedHashMap::new));
 
-        Map<String, Map<String, ComponentUpgradeRule>> rulesByComponentVersion = new LinkedHashMap<>();
+        Map<String, Map<String, ComponentSpec>> rulesByComponentVersion = new LinkedHashMap<>();
 
         for (Recipe recipe : recipes) {
-            Map<String, String> components = safeComponents(recipe);
-            Map<String, ComponentUpgradeRule> rules = safeComponentUpgradeRules(recipe);
-            for (Map.Entry<String, String> entry : components.entrySet()) {
+            Map<String, ComponentSpec> components = safeComponents(recipe);
+            for (Map.Entry<String, ComponentSpec> entry : components.entrySet()) {
                 String compName = entry.getKey();
-                String compVersion = entry.getValue();
-                ComponentUpgradeRule rule = rules.get(compName);
-                if (rule == null) continue;
-                Map<String, ComponentUpgradeRule> byVersion =
+                ComponentSpec spec = entry.getValue();
+                String compVersion = componentVersion(spec);
+                if (compVersion == null) continue;
+                Map<String, ComponentSpec> byVersion =
                         rulesByComponentVersion.computeIfAbsent(compName, k -> new LinkedHashMap<>());
-                ComponentUpgradeRule existing = byVersion.get(compVersion);
-                if (existing != null && !componentRuleEquals(existing, rule)) {
+                ComponentSpec existing = byVersion.get(compVersion);
+                if (existing != null && !componentRuleEquals(existing, spec)) {
                     return Optional.of(
                             "Conflicting upgrade rules for component " + compName + " version " + compVersion);
                 }
-                byVersion.put(compVersion, new ComponentUpgradeRule(rule.getFrom(), rule.getTo()));
+                byVersion.put(compVersion, new ComponentSpec(
+                        compVersion,
+                        spec.getUpgradeFrom(),
+                        spec.getUpgradeTo()
+                ));
             }
         }
 
@@ -586,27 +603,27 @@ public class HelmReleaseService {
                     return Optional.of("Upgrade path references missing recipe version " + fromVersion);
                 }
 
-                Map<String, String> targetComponents = safeComponents(target);
-                Map<String, String> sourceComponents = safeComponents(source);
+                Map<String, ComponentSpec> targetComponents = safeComponents(target);
+                Map<String, ComponentSpec> sourceComponents = safeComponents(source);
 
-                for (Map.Entry<String, String> compEntry : targetComponents.entrySet()) {
+                for (Map.Entry<String, ComponentSpec> compEntry : targetComponents.entrySet()) {
                     String compName = compEntry.getKey();
-                    String targetVersion = compEntry.getValue();
-                    String sourceVersion = sourceComponents.get(compName);
+                    String targetVersion = componentVersion(compEntry.getValue());
+                    String sourceVersion = componentVersion(sourceComponents.get(compName));
                     if (sourceVersion == null || targetVersion == null) continue;
 
-                    ComponentUpgradeRule targetRule = rulesByComponentVersion
+                    ComponentSpec targetRule = rulesByComponentVersion
                             .getOrDefault(compName, Collections.emptyMap())
                             .get(targetVersion);
-                    ComponentUpgradeRule sourceRule = rulesByComponentVersion
+                    ComponentSpec sourceRule = rulesByComponentVersion
                             .getOrDefault(compName, Collections.emptyMap())
                             .get(sourceVersion);
 
-                    if (targetRule != null && !isAllowed(targetRule.getFrom(), sourceVersion)) {
+                    if (targetRule != null && !isAllowed(targetRule.getUpgradeFrom(), sourceVersion)) {
                         return Optional.of("Component " + compName + " version " + targetVersion
                                 + " cannot upgrade from " + sourceVersion);
                     }
-                    if (sourceRule != null && !isAllowed(sourceRule.getTo(), targetVersion)) {
+                    if (sourceRule != null && !isAllowed(sourceRule.getUpgradeTo(), targetVersion)) {
                         return Optional.of("Component " + compName + " version " + sourceVersion
                                 + " cannot upgrade to " + targetVersion);
                     }
@@ -622,13 +639,81 @@ public class HelmReleaseService {
         return allowed.contains(version);
     }
 
-    private boolean componentRuleEquals(ComponentUpgradeRule a, ComponentUpgradeRule b) {
-        List<String> fromA = a.getFrom() != null ? a.getFrom() : Collections.emptyList();
-        List<String> fromB = b.getFrom() != null ? b.getFrom() : Collections.emptyList();
-        List<String> toA = a.getTo() != null ? a.getTo() : Collections.emptyList();
-        List<String> toB = b.getTo() != null ? b.getTo() : Collections.emptyList();
+    private boolean componentRuleEquals(ComponentSpec a, ComponentSpec b) {
+        List<String> fromA = a.getUpgradeFrom() != null ? a.getUpgradeFrom() : Collections.emptyList();
+        List<String> fromB = b.getUpgradeFrom() != null ? b.getUpgradeFrom() : Collections.emptyList();
+        List<String> toA = a.getUpgradeTo() != null ? a.getUpgradeTo() : Collections.emptyList();
+        List<String> toB = b.getUpgradeTo() != null ? b.getUpgradeTo() : Collections.emptyList();
         return new LinkedHashSet<>(fromA).equals(new LinkedHashSet<>(fromB))
                 && new LinkedHashSet<>(toA).equals(new LinkedHashSet<>(toB));
+    }
+
+    private String componentVersion(ComponentSpec spec) {
+        return spec != null ? spec.getVersion() : null;
+    }
+
+    private Map<String, Object> buildComponentPayload(Map<String, ComponentSpec> components) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (components == null) return payload;
+
+        for (Map.Entry<String, ComponentSpec> entry : components.entrySet()) {
+            ComponentSpec spec = entry.getValue();
+            if (spec == null) continue;
+            Map<String, Object> specMap = new LinkedHashMap<>();
+            specMap.put("version", spec.getVersion());
+            specMap.put("upgrade_from", safeList(spec.getUpgradeFrom()));
+            specMap.put("upgrade_to", safeList(spec.getUpgradeTo()));
+            payload.put(entry.getKey(), specMap);
+        }
+
+        return payload;
+    }
+
+    private List<String> safeList(List<String> items) {
+        return items != null ? items : Collections.emptyList();
+    }
+
+    private String readText(JsonNode node, String field) {
+        if (node == null) return null;
+        JsonNode value = node.get(field);
+        return value != null && value.isTextual() ? value.asText() : null;
+    }
+
+    private JsonNode readFirst(JsonNode node, String primary, String fallback) {
+        if (node == null) return null;
+        JsonNode first = node.get(primary);
+        if (first != null) return first;
+        return node.get(fallback);
+    }
+
+    private List<String> readStringList(JsonNode node) {
+        if (node == null) return new ArrayList<>();
+        List<String> values = new ArrayList<>();
+        if (node.isArray()) {
+            node.forEach(v -> values.add(v.asText()));
+        } else if (node.isTextual()) {
+            String raw = node.asText();
+            Arrays.stream(raw.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .forEach(values::add);
+        }
+        return values;
+    }
+
+    private String normalizeVersion(String version) {
+        if (version == null) return null;
+        return version.trim().replaceFirst("^[vV]", "");
+    }
+
+    private List<String> normalizeVersions(List<String> versions) {
+        if (versions == null) return Collections.emptyList();
+        List<String> normalized = new ArrayList<>();
+        for (String v : versions) {
+            String clean = normalizeVersion(v);
+            if (clean != null && !clean.isBlank()) normalized.add(clean);
+        }
+        return normalized;
     }
 
     // ================= INTERNAL =================
@@ -672,21 +757,10 @@ public class HelmReleaseService {
             for (Recipe r : release.getRecipes()) {
 
                 Map<String, Object> map = new LinkedHashMap<>();
-                map.put("version", r.getVersion());
+                map.put("version", normalizeVersion(r.getVersion()));
                 map.put("description", r.getDescription());
-                map.put("components", r.getComponents());
-                map.put("upgradePaths", r.getUpgradePaths());
-                if (r.getComponentUpgradeRules() != null && !r.getComponentUpgradeRules().isEmpty()) {
-                    Map<String, Map<String, List<String>>> rules = new LinkedHashMap<>();
-                    for (Map.Entry<String, ComponentUpgradeRule> entry : r.getComponentUpgradeRules().entrySet()) {
-                        ComponentUpgradeRule rule = entry.getValue();
-                        Map<String, List<String>> ruleMap = new LinkedHashMap<>();
-                        ruleMap.put("from", rule.getFrom() != null ? rule.getFrom() : Collections.emptyList());
-                        ruleMap.put("to", rule.getTo() != null ? rule.getTo() : Collections.emptyList());
-                        rules.put(entry.getKey(), ruleMap);
-                    }
-                    map.put("componentUpgradeRules", rules);
-                }
+                map.put("components", buildComponentPayload(r.getComponents()));
+                map.put("upgradePaths", normalizeVersions(r.getUpgradePaths()));
 
                 recipes.add(map);
             }

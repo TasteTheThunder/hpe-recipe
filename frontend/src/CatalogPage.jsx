@@ -137,8 +137,8 @@ export default function CatalogPage() {
             style={{
               display: 'grid',
               gridTemplateColumns:
-                'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: 28,
+                'repeat(auto-fit, minmax(420px, 1fr))',
+              gap: 24,
               alignItems: 'stretch',
               marginBottom: 24,
             }}
@@ -155,13 +155,13 @@ export default function CatalogPage() {
                     ...cardStyle,
                     display: 'flex',
                     flexDirection: 'column',
-                    minHeight: 340,
-                    height: '100%',
+                    minHeight: 320,
+                    height: 'auto',
                     boxShadow: '0 2px 12px 0 rgba(0,0,0,0.10)',
                     transition: 'box-shadow 0.2s, border 0.2s, transform 0.2s',
-                    position: 'relative',
-                    padding: 28,
+                    padding: 22,
                     gap: 0,
+                    marginBottom: 0,
                   }}
                   onMouseEnter={e => {
                     e.currentTarget.style.boxShadow = '0 4px 16px 0 rgba(0,255,255,0.06)';
@@ -248,12 +248,9 @@ export default function CatalogPage() {
                   {/* Button always at bottom */}
                   <div
                     style={{
-                      display: 'flex', justifyContent: 'flex-end',
+                      display: 'flex',
+                      justifyContent: 'flex-end',
                       marginTop: 'auto',
-                      position: 'absolute',
-                      bottom: 24,
-                      right: 28,
-                      left: 28,
                     }}
                   >
                     <Link

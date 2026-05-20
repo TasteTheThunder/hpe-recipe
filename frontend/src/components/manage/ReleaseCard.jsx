@@ -12,17 +12,23 @@ import { normalizeRecipeDescription, getEffectiveUpgradePaths } from './utils';
 
 const API_BASE = '/api';
 
+const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version || ''));
+
 export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onNotify }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
   const [editingRecipe, setEditingRecipe] = useState(null);
 
+  const fetchDetail = () => {
+    return fetch(`${API_BASE}/helm-releases/${release.version}?cluster=${cluster}`)
+      .then((r) => r.json())
+      .then(setDetail)
+      .catch(() => {});
+  };
+
   useEffect(() => {
     if (expanded) {
-      fetch(`${API_BASE}/helm-releases/${release.version}?cluster=${cluster}`)
-        .then((r) => r.json())
-        .then(setDetail)
-        .catch(() => {});
+      fetchDetail();
     }
   }, [expanded, release.version, cluster]);
 
@@ -65,8 +71,8 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
       })
       .then(() => {
         onNotify('Recipe updated');
-        setDetail(null);
         setEditingRecipe(null);
+        fetchDetail();
         onRefresh();
       })
       .catch((err) => onNotify(err.message, true));
@@ -203,7 +209,8 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
 
                   {/* Components grid */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                    {Object.entries(recipe.components || {}).map(([name, ver]) => {
+                    {Object.entries(recipe.components || {}).map(([name, spec]) => {
+                      const ver = readVersion(spec);
                       const fromPaths = effectiveFromPaths;
                       const toPaths = recipes
                         .filter((r, idx) => getEffectiveUpgradePaths(recipes, r, idx).includes(recipe.version))
@@ -211,13 +218,13 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
 
                       const prevVers = fromPaths.map((pv) => {
                         const pr = recipes.find((r) => r.version === pv);
-                        return pr?.components?.[name];
+                        return readVersion(pr?.components?.[name]);
                       }).filter((v) => v && v !== ver);
                       const uniquePrev = [...new Set(prevVers)];
 
                       const nextVers = toPaths.map((tv) => {
                         const tr = recipes.find((r) => r.version === tv);
-                        return tr?.components?.[name];
+                        return readVersion(tr?.components?.[name]);
                       }).filter((v) => v && v !== ver);
                       const uniqueNext = [...new Set(nextVers)];
 

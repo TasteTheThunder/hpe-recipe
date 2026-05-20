@@ -1,6 +1,6 @@
 package com.hpe.recipe.controller;
 
-import com.hpe.recipe.model.Recipe;
+import com.hpe.recipe.model.ComponentSpec;
 import com.hpe.recipe.service.CatalogService;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +19,7 @@ public class RecipeController {
     }
 
     @GetMapping("/{recipeVersion}/components")
-    public Map<String, String> getComponents(@PathVariable String recipeVersion) {
+    public Map<String, ComponentSpec> getComponents(@PathVariable String recipeVersion) {
         return catalogService.getComponentsByRecipe(recipeVersion);
     }
 

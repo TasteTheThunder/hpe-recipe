@@ -8,9 +8,19 @@ import {
   cardStyle,
   labelStyle,
 } from '../../ui/styles';
-import { normalizeRecipeDescription, parseUpgradeList } from './utils';
+import { normalizeRecipeDescription, parseUpgradeList, normalizeVersion } from './utils';
 
 const API_BASE = '/api';
+
+const readUpgradeList = (spec, key, fallbackKey) => {
+  if (!spec || typeof spec !== 'object') return [];
+  const raw = spec[key] || spec[fallbackKey];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (typeof raw === 'string') return parseUpgradeList(raw);
+  return [];
+};
+
+const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version || ''));
 
 export default function CreateReleaseForm({ cluster, onCreated }) {
   const [version, setVersion] = useState('');
@@ -94,12 +104,11 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
       return;
     }
 
-    const compRules = recipe.componentUpgradeRules || {};
-    const components = Object.entries(recipe.components || {}).map(([name, ver]) => ({
+    const components = Object.entries(recipe.components || {}).map(([name, spec]) => ({
       name,
-      version: ver,
-      upgradeFrom: (compRules[name]?.from || []).join(', '),
-      upgradeTo: (compRules[name]?.to || []).join(', '),
+      version: readVersion(spec),
+      upgradeFrom: readUpgradeList(spec, 'upgrade_from', 'upgradeFrom').join(', '),
+      upgradeTo: readUpgradeList(spec, 'upgrade_to', 'upgradeTo').join(', '),
     }));
 
     const imported = {
@@ -177,7 +186,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
       return;
     }
 
-    const draftVersions = typedDrafts.map((r) => r.version.trim());
+    const draftVersions = typedDrafts.map((r) => normalizeVersion(r.version));
     const duplicateVersion = draftVersions.find((v, i) => draftVersions.indexOf(v) !== i);
 
     if (duplicateVersion) {
@@ -188,36 +197,38 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
     const recipesPayload = [];
     for (let idx = 0; idx < typedDrafts.length; idx += 1) {
       const recipe = typedDrafts[idx];
+      const recipeVersion = normalizeVersion(recipe.version);
       const compMap = {};
-      const compRules = {};
       recipe.components.forEach((c) => {
         if (c.name.trim() && c.version.trim()) {
           const compName = c.name.trim();
-          compMap[compName] = c.version.trim();
           const fromList = parseUpgradeList(c.upgradeFrom);
           const toList = parseUpgradeList(c.upgradeTo);
-          if (fromList.length > 0 || toList.length > 0) {
-            compRules[compName] = { from: fromList, to: toList };
-          }
+          compMap[compName] = {
+            version: c.version.trim(),
+            upgrade_from: fromList,
+            upgrade_to: toList,
+          };
         }
       });
 
       if (Object.keys(compMap).length === 0) {
-        onCreated(`Recipe ${recipe.version.trim()} must have at least one component`, true);
+        onCreated(`Recipe ${recipeVersion} must have at least one component`, true);
         return;
       }
 
-      const explicitUpgradePaths = recipe.upgradePaths.filter((p) => Boolean(p) && p !== recipe.version.trim());
+      const explicitUpgradePaths = recipe.upgradePaths
+        .map((p) => normalizeVersion(p))
+        .filter((p) => Boolean(p) && p !== recipeVersion);
       const validUpgradePaths = explicitUpgradePaths.length > 0
         ? explicitUpgradePaths
-        : (idx > 0 ? [typedDrafts[idx - 1].version.trim()] : []);
+        : (idx > 0 ? [normalizeVersion(typedDrafts[idx - 1].version)] : []);
 
       recipesPayload.push({
-        version: recipe.version.trim(),
-        description: normalizeRecipeDescription(recipe.description, recipe.version.trim()),
+        version: recipeVersion,
+        description: normalizeRecipeDescription(recipe.description, recipeVersion),
         components: compMap,
         upgradePaths: validUpgradePaths,
-        componentUpgradeRules: compRules,
       });
     }
 
@@ -305,7 +316,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
           </div>
 
           <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>
-                Add at least one recipe version with components. Upgrade paths are optional.
+                Add at least one recipe version with components.
           </div>
 
           {importOpen && (
@@ -383,7 +394,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                   background: T.bgCard,
                   marginBottom: 8,
                 }}>
-                  No recipes added yet. Click + Create New Recipe.
+                  No recipes added yet. Create a new recipe or import from an existing release.
                 </div>
               )}
 
@@ -500,30 +511,28 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                   </button>
                 </div>
 
-                <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade From</label>
-                {upgradeCandidates.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {upgradeCandidates.map((v) => (
-                      <button
-                        key={`${recipe.id}-${v}`}
-                        type="button"
-                        onClick={() => toggleDraftUpgradePath(recipe.id, v)}
-                        style={{
-                          padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                          background: recipe.upgradePaths.includes(v) ? `${T.teal}22` : T.bgSurface,
-                          color: recipe.upgradePaths.includes(v) ? T.teal : T.textMuted,
-                          border: `1px solid ${recipe.upgradePaths.includes(v) ? T.teal : T.border}`,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        v{v}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 11, color: T.textMuted }}>
-                    Add a previous recipe version first to configure upgrade path.
-                  </div>
+                {upgradeCandidates.length > 0 && (
+                  <>
+                    <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade From</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {upgradeCandidates.map((v) => (
+                        <button
+                          key={`${recipe.id}-${v}`}
+                          type="button"
+                          onClick={() => toggleDraftUpgradePath(recipe.id, v)}
+                          style={{
+                            padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                            background: recipe.upgradePaths.includes(v) ? `${T.teal}22` : T.bgSurface,
+                            color: recipe.upgradePaths.includes(v) ? T.teal : T.textMuted,
+                            border: `1px solid ${recipe.upgradePaths.includes(v) ? T.teal : T.border}`,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          v{v}
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 )}
                   </>
                 )}

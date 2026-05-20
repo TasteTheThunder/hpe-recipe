@@ -1,6 +1,8 @@
 import T from '../../theme';
 import { getCompTheme } from './compThemes';
 
+const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version || ''));
+
 export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }) {
   if (!recipe) return null;
   const comps = recipe.components ? Object.entries(recipe.components) : [];
@@ -50,20 +52,21 @@ export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }
           Components ({comps.length})
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-          {comps.map(([name, ver], i) => {
+          {comps.map(([name, spec], i) => {
             const theme = getCompTheme(name, i);
+            const ver = readVersion(spec);
 
             // Find unique previous versions for this component
             const prevVers = fromPaths.map((pv) => {
               const pr = allRecipes.find((r) => r.version === pv);
-              return pr?.components?.[name];
+              return readVersion(pr?.components?.[name]);
             }).filter((v) => v && v !== ver);
             const uniquePrev = [...new Set(prevVers)];
 
             // Find unique next versions
             const nextVers = toPaths.map((tv) => {
               const tr = allRecipes.find((r) => r.version === tv);
-              return tr?.components?.[name];
+              return readVersion(tr?.components?.[name]);
             }).filter((v) => v && v !== ver);
             const uniqueNext = [...new Set(nextVers)];
 

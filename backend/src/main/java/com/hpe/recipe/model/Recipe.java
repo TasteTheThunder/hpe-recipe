@@ -7,26 +7,16 @@ public class Recipe {
 
     private String version;
     private String description;
-    private Map<String, String> components;
+    private Map<String, ComponentSpec> components;
     private List<String> upgradePaths;
-    private Map<String, ComponentUpgradeRule> componentUpgradeRules;
 
     public Recipe() {}
 
-    public Recipe(String version, String description, Map<String, String> components, List<String> upgradePaths) {
+    public Recipe(String version, String description, Map<String, ComponentSpec> components, List<String> upgradePaths) {
         this.version = version;
         this.description = description;
         this.components = components;
         this.upgradePaths = upgradePaths;
-    }
-
-    public Recipe(String version, String description, Map<String, String> components, List<String> upgradePaths,
-                  Map<String, ComponentUpgradeRule> componentUpgradeRules) {
-        this.version = version;
-        this.description = description;
-        this.components = components;
-        this.upgradePaths = upgradePaths;
-        this.componentUpgradeRules = componentUpgradeRules;
     }
 
     public String getVersion() { return version; }
@@ -35,14 +25,10 @@ public class Recipe {
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
 
-    public Map<String, String> getComponents() { return components; }
-    public void setComponents(Map<String, String> components) { this.components = components; }
+    public Map<String, ComponentSpec> getComponents() { return components; }
+    public void setComponents(Map<String, ComponentSpec> components) { this.components = components; }
 
     public List<String> getUpgradePaths() { return upgradePaths; }
     public void setUpgradePaths(List<String> upgradePaths) { this.upgradePaths = upgradePaths; }
 
-    public Map<String, ComponentUpgradeRule> getComponentUpgradeRules() { return componentUpgradeRules; }
-    public void setComponentUpgradeRules(Map<String, ComponentUpgradeRule> componentUpgradeRules) {
-        this.componentUpgradeRules = componentUpgradeRules;
-    }
 }

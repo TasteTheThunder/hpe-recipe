@@ -2,6 +2,7 @@ package com.hpe.recipe.service;
 
 import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
+import com.hpe.recipe.model.ComponentSpec;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
@@ -137,45 +138,29 @@ public class GitOpsService {
         List<Map<String, Object>> recipeMaps = new ArrayList<>();
         for (Recipe recipe : release.getRecipes()) {
             Map<String, Object> recipeMap = new LinkedHashMap<>();
-            recipeMap.put("version", quote(recipe.getVersion()));
+            recipeMap.put("version", quote(normalizeVersion(recipe.getVersion())));
             recipeMap.put("description", quote(recipe.getDescription()));
 
-            Map<String, String> components = new LinkedHashMap<>();
+            Map<String, Object> components = new LinkedHashMap<>();
             if (recipe.getComponents() != null) {
-                recipe.getComponents().forEach((k, v) -> components.put(k, quote(v)));
+                recipe.getComponents().forEach((name, spec) -> {
+                    Map<String, Object> compMap = new LinkedHashMap<>();
+                    compMap.put("version", quote(spec.getVersion()));
+                    compMap.put("upgrade_from", quoteAll(spec.getUpgradeFrom()));
+                    compMap.put("upgrade_to", quoteAll(spec.getUpgradeTo()));
+                    components.put(name, compMap);
+                });
             }
             recipeMap.put("components", components);
 
-            Map<String, Object> componentRulesMap = new LinkedHashMap<>();
-
-            if (recipe.getComponentUpgradeRules() != null) {
-
-                recipe.getComponentUpgradeRules().forEach((componentName, rule) -> {
-
-                    Map<String, Object> ruleMap = new LinkedHashMap<>();
-
-                    List<String> fromVersions = new ArrayList<>();
-                    if (rule.getFrom() != null) {
-                        rule.getFrom().forEach(v -> fromVersions.add(quote(v)));
-                    }
-
-                    List<String> toVersions = new ArrayList<>();
-                    if (rule.getTo() != null) {
-                        rule.getTo().forEach(v -> toVersions.add(quote(v)));
-                    }
-
-                    ruleMap.put("from", fromVersions);
-                    ruleMap.put("to", toVersions);
-
-                    componentRulesMap.put(componentName, ruleMap);
-                });
-            }
-
-            recipeMap.put("componentUpgradeRules", componentRulesMap);
-
             List<String> paths = new ArrayList<>();
             if (recipe.getUpgradePaths() != null) {
-                recipe.getUpgradePaths().forEach(p -> paths.add(quote(p)));
+                recipe.getUpgradePaths().forEach(p -> {
+                    String normalized = normalizeVersion(p);
+                    if (normalized != null && !normalized.isBlank()) {
+                        paths.add(quote(normalized));
+                    }
+                });
             }
             recipeMap.put("upgradePaths", paths);
             recipeMaps.add(recipeMap);
@@ -188,13 +173,28 @@ public class GitOpsService {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("recipeData", recipeData);
 
-        return yaml.dump(root);
+        String dumped = yaml.dump(root);
+        dumped = dumped.replaceAll("(?s)(upgrade_from|upgrade_to):\\s*\\[\\s*\\]", "$1: []");
+        dumped = dumped.replaceAll("(?s)upgradePaths:\\s*\\[\\s*\\]", "upgradePaths: []");
+        return dumped;
+    }
+
+    private String normalizeVersion(String version) {
+        if (version == null) return null;
+        return version.trim().replaceFirst("^[vV]", "");
     }
 
     private String quote(String val) {
         // SnakeYAML will auto-quote strings that look like numbers
         // We want explicit quoting for version strings
         return val;
+    }
+
+    private List<String> quoteAll(List<String> values) {
+        if (values == null) return new ArrayList<>();
+        List<String> quoted = new ArrayList<>();
+        values.forEach(v -> quoted.add(quote(v)));
+        return quoted;
     }
 
     private void updateChartVersion(File chartFile, String version) throws IOException {

@@ -7,16 +7,26 @@ import {
   btnSecondary,
   labelStyle,
 } from '../../ui/styles';
-import { normalizeRecipeDescription, parseUpgradeList } from './utils';
+import { normalizeRecipeDescription, parseUpgradeList, normalizeVersion } from './utils';
+
+const readUpgradeList = (spec, key, fallbackKey) => {
+  if (!spec || typeof spec !== 'object') return [];
+  const raw = spec[key] || spec[fallbackKey];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (typeof raw === 'string') return parseUpgradeList(raw);
+  return [];
+};
+
+const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version || ''));
 
 export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel }) {
   const [description, setDescription] = useState(recipe.description || '');
   const [components, setComponents] = useState(
-    Object.entries(recipe.components || {}).map(([name, version]) => ({
+    Object.entries(recipe.components || {}).map(([name, spec]) => ({
       name,
-      version,
-      upgradeFrom: recipe.componentUpgradeRules?.[name]?.from?.join(', ') || '',
-      upgradeTo: recipe.componentUpgradeRules?.[name]?.to?.join(', ') || '',
+      version: readVersion(spec),
+      upgradeFrom: readUpgradeList(spec, 'upgrade_from', 'upgradeFrom').join(', '),
+      upgradeTo: readUpgradeList(spec, 'upgrade_to', 'upgradeTo').join(', '),
     }))
   );
   const [upgradePaths, setUpgradePaths] = useState([...(recipe.upgradePaths || [])]);
@@ -36,23 +46,25 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
 
   const handleSave = () => {
     const compMap = {};
-    const compRules = {};
     components.forEach((c) => {
       if (c.name.trim() && c.version.trim()) {
         const compName = c.name.trim();
-        compMap[compName] = c.version.trim();
         const fromList = parseUpgradeList(c.upgradeFrom);
         const toList = parseUpgradeList(c.upgradeTo);
-        if (fromList.length > 0 || toList.length > 0) {
-          compRules[compName] = { from: fromList, to: toList };
-        }
+        compMap[compName] = {
+          version: c.version.trim(),
+          upgrade_from: fromList,
+          upgrade_to: toList,
+        };
       }
     });
+    const recipeVersion = normalizeVersion(recipe.version);
+    const normalizedUpgradePaths = upgradePaths.map((p) => normalizeVersion(p)).filter(Boolean);
     onSave({
-      description: normalizeRecipeDescription(description, recipe.version),
+      version: recipeVersion,
+      description: normalizeRecipeDescription(description, recipeVersion),
       components: compMap,
-      upgradePaths,
-      componentUpgradeRules: compRules,
+      upgradePaths: normalizedUpgradePaths,
     });
   };
 

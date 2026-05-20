@@ -5,10 +5,17 @@ function normalizeRecipeDescription(text, fallbackVersion) {
 }
 
 function parseUpgradeList(text) {
+  if (Array.isArray(text)) {
+    return text.map((v) => String(v).trim()).filter(Boolean);
+  }
   return String(text || '')
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean);
+}
+
+function normalizeVersion(version) {
+  return String(version || '').trim().replace(/^v/i, '');
 }
 
 
@@ -25,5 +32,6 @@ function getEffectiveUpgradePaths(recipes, recipe, recipeIndex) {
 export {
   normalizeRecipeDescription,
   parseUpgradeList,
+  normalizeVersion,
   getEffectiveUpgradePaths,
 };

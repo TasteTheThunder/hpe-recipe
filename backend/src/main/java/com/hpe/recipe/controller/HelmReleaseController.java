@@ -1,6 +1,7 @@
 package com.hpe.recipe.controller;
 
 import com.hpe.recipe.config.ReleaseWebSocketHandler;
+import com.hpe.recipe.model.ComponentSpec;
 import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
 import com.hpe.recipe.service.GitOpsService;
@@ -266,7 +267,7 @@ public class HelmReleaseController {
 
     // 🔥 COMPONENTS
     @GetMapping("/{version}/recipes/{recipeVersion}/components")
-    public Map<String, String> getComponents(
+    public Map<String, ComponentSpec> getComponents(
             @PathVariable String version,
             @PathVariable String recipeVersion,
             @RequestParam String cluster) {

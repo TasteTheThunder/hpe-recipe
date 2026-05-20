@@ -1,6 +1,7 @@
 package com.hpe.recipe.service;
 
 import com.hpe.recipe.model.Catalog;
+import com.hpe.recipe.model.ComponentSpec;
 import com.hpe.recipe.model.HelmRelease;
 import com.hpe.recipe.model.Recipe;
 import org.springframework.stereotype.Service;
@@ -33,7 +34,7 @@ public class CatalogService {
                 .orElse(Collections.emptyList());
     }
 
-    public Map<String, String> getComponentsByRecipe(String recipeVersion) {
+    public Map<String, ComponentSpec> getComponentsByRecipe(String recipeVersion) {
         return Collections.emptyMap();
     }
 

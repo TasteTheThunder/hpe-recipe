@@ -3,6 +3,8 @@ import T from '../theme';
 import layoutGraph from './layoutGraph';
 import { getCompTheme } from '../components/visualizer/compThemes';
 
+const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version || ''));
+
 export default function buildGraph(recipes, selectedRecipeVersion) {
   const nodes = [];
   const edges = [];
@@ -39,7 +41,8 @@ export default function buildGraph(recipes, selectedRecipeVersion) {
   if (selectedRecipeVersion) {
     const sel = recipes.find((r) => r.version === selectedRecipeVersion);
     if (sel?.components) {
-      Object.entries(sel.components).forEach(([name, ver], i) => {
+      Object.entries(sel.components).forEach(([name, spec], i) => {
+        const ver = readVersion(spec);
         const theme = getCompTheme(name, i);
         const nid = `comp-${selectedRecipeVersion}-${name}`;
         nodes.push({
