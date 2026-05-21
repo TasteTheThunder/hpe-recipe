@@ -5,6 +5,8 @@ export default function StatsBar({ release }) {
   const recipeCount = release.recipes?.length || 0;
   const compCount = release.recipes?.reduce((s, r) => s + Object.keys(r.components || {}).length, 0) || 0;
   const pathCount = release.recipes?.reduce((s, r) => s + (r.upgrade_to?.length || 0), 0) || 0;
+  const catalogName = release.catalogName || release.catalog_name;
+  const catalogStatus = release.catalogStatus || release.catalog_status;
 
   const stats = [
     { label: 'Recipes', value: recipeCount, color: T.teal },
@@ -12,6 +14,13 @@ export default function StatsBar({ release }) {
     { label: 'Upgrade Paths', value: pathCount, color: T.yellow },
     { label: 'Status', value: release.status, color: release.status === 'deployed' ? T.teal : T.red },
   ];
+
+  if (catalogName) {
+    stats.push({ label: 'Catalog', value: catalogName, color: T.blue });
+  }
+  if (catalogStatus) {
+    stats.push({ label: 'Catalog Status', value: catalogStatus, color: T.teal });
+  }
 
   return (
     <div style={{

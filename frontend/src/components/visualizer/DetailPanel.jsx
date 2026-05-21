@@ -28,6 +28,27 @@ export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.teal }}>v{recipe.version}</div>
           <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{recipe.description}</div>
+          {(recipe.release_date || recipe.status) && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              {recipe.release_date && (
+                <span style={{
+                  padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                  background: `${T.blue}15`, color: T.blue,
+                }}>{recipe.release_date}</span>
+              )}
+              {recipe.status && (
+                <span style={{
+                  padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                  background: `${T.teal}18`, color: T.teal,
+                }}>{recipe.status}</span>
+              )}
+            </div>
+          )}
+          {recipe.release_notes && (
+            <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6 }}>
+              {recipe.release_notes}
+            </div>
+          )}
         </div>
         <button onClick={onClose} style={{
           background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 6,
@@ -57,6 +78,7 @@ export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }
           {comps.map(([name, spec], i) => {
             const theme = getCompTheme(name, i);
             const ver = readVersion(spec);
+            const compReleaseDate = spec?.release_date || '';
 
             // Find unique previous versions for this component
             const prevVers = fromPaths.map((pv) => {
@@ -88,6 +110,11 @@ export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }
                         {uniquePrev.length > 0 && <span>{uniquePrev.join(', ')} → </span>}
                         <span style={{ color: theme.color, fontWeight: 700 }}>{ver}</span>
                         {uniqueNext.length > 0 && <span> → {uniqueNext.join(', ')}</span>}
+                      </div>
+                    )}
+                    {compReleaseDate && (
+                      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>
+                        Released {compReleaseDate}
                       </div>
                     )}
                   </div>

@@ -25,6 +25,11 @@ const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version 
 export default function CreateReleaseForm({ cluster, onCreated }) {
   const [version, setVersion] = useState('');
   const [releaseName, setReleaseName] = useState('');
+  const [catalogName, setCatalogName] = useState('');
+  const [catalogDescription, setCatalogDescription] = useState('');
+  const [catalogReleaseDate, setCatalogReleaseDate] = useState('');
+  const [catalogStatus, setCatalogStatus] = useState('GA');
+  const [maintainer, setMaintainer] = useState('');
   const [draftRecipes, setDraftRecipes] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [expandedRecipeIds, setExpandedRecipeIds] = useState([]);
@@ -41,7 +46,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
     version: '',
     description: '',
     releaseDate: '',
-    status: '',
+    status: 'GA',
     releaseNotes: '',
     components: [
       { name: '', version: '', releaseDate: '', upgradeFrom: '', upgradeTo: '' },
@@ -120,7 +125,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
       version: recipe.version || '',
       description: recipe.description || '',
       releaseDate: recipe.release_date || '',
-      status: recipe.status || '',
+      status: recipe.status || 'GA',
       releaseNotes: recipe.release_notes || '',
       components: components.length > 0 ? components : [
         { name: '', version: '', releaseDate: '', upgradeFrom: '', upgradeTo: '' },
@@ -256,6 +261,11 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
         version: version.trim(),
         releaseName: releaseName.trim() || autoReleaseName,
         status: 'pending',
+        catalog_name: catalogName.trim(),
+        catalog_description: catalogDescription.trim(),
+        release_date: catalogReleaseDate,
+        catalog_status: catalogStatus,
+        maintainer: maintainer.trim(),
         recipes: recipesPayload,
       }),
     })
@@ -270,6 +280,11 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
       })
       .then(() => {
         setVersion(''); setReleaseName('');
+        setCatalogName('');
+        setCatalogDescription('');
+        setCatalogReleaseDate('');
+        setCatalogStatus('GA');
+        setMaintainer('');
         setDraftRecipes([]);
         setExpandedRecipeIds([]);
         onCreated(`Helm release created with ${recipesPayload.length} recipe${recipesPayload.length > 1 ? 's' : ''}`);
@@ -284,17 +299,67 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: T.teal }} />
         New Helm Release
       </h3>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div>
           <label style={labelStyle}>Chart Version</label>
           <input style={inputStyle} placeholder="e.g. 0.0.4" value={version}
             onChange={(e) => setVersion(e.target.value)} required />
         </div>
         <div>
-          <label style={labelStyle}>Release Name (auto-generated if blank)</label>
+          <label style={labelStyle}>Catalog Name</label>
+          <input
+            style={inputStyle}
+            placeholder="e.g. HPE Analytics Runtime"
+            value={catalogName}
+            onChange={(e) => setCatalogName(e.target.value)}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Catalog Status</label>
+          <select style={inputStyle} value={catalogStatus} onChange={(e) => setCatalogStatus(e.target.value)}>
+            <option value="GA">GA</option>
+            <option value="Beta">Beta</option>
+            <option value="Deprecated">Deprecated</option>
+            <option value="Internal">Internal</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 14 }}>
+        <div>
+          <label style={labelStyle}>Release Date</label>
+          <input
+            style={inputStyle}
+            type="date"
+            value={catalogReleaseDate}
+            onChange={(e) => setCatalogReleaseDate(e.target.value)}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Maintainer</label>
+          <input
+            style={inputStyle}
+            placeholder="e.g. HPE DevOps Team"
+            value={maintainer}
+            onChange={(e) => setMaintainer(e.target.value)}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Release Name</label>
           <input style={inputStyle} placeholder={autoReleaseName || 'e.g. recipe-detection-v4'}
             value={releaseName} onChange={(e) => setReleaseName(e.target.value)} />
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+            Auto-generated if empty
+          </div>
         </div>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label style={labelStyle}>Catalog Description</label>
+        <input
+          style={inputStyle}
+          placeholder="e.g. Enterprise analytics and streaming platform catalog"
+          value={catalogDescription}
+          onChange={(e) => setCatalogDescription(e.target.value)}
+        />
       </div>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16,
@@ -470,19 +535,24 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                     <label style={labelStyle}>Release Date</label>
                     <input
                       style={inputStyle}
-                      placeholder="YYYY-MM-DD"
+                      type="date"
                       value={recipe.releaseDate}
                       onChange={(e) => updateRecipeDraft(recipe.id, 'releaseDate', e.target.value)}
                     />
                   </div>
                   <div>
                     <label style={labelStyle}>Status</label>
-                    <input
+                    <select
                       style={inputStyle}
-                      placeholder="GA, Beta, Deprecated"
                       value={recipe.status}
                       onChange={(e) => updateRecipeDraft(recipe.id, 'status', e.target.value)}
-                    />
+                    >
+                      <option value="GA">GA</option>
+                      <option value="Beta">Beta</option>
+                      <option value="Deprecated">Deprecated</option>
+                      <option value="Retired">Retired</option>
+                      <option value="Preview">Preview</option>
+                    </select>
                   </div>
                 </div>
 
@@ -500,7 +570,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                     <label style={labelStyle}>Release Notes</label>
                     <input
                       style={inputStyle}
-                      placeholder="Improved Kafka scalability and Spark optimization"
+                      placeholder="e.g. Performance and stability improvements"
                       value={recipe.releaseNotes}
                       onChange={(e) => updateRecipeDraft(recipe.id, 'releaseNotes', e.target.value)}
                     />
@@ -530,7 +600,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
                       />
                       <input
                         style={inputStyle}
-                        placeholder="Release Date"
+                        type="date"
                         value={c.releaseDate || ''}
                         onChange={(e) => updateDraftComponent(recipe.id, i, 'releaseDate', e.target.value)}
                       />

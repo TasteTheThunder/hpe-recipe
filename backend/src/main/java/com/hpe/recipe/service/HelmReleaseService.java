@@ -73,6 +73,11 @@ public class HelmReleaseService {
         copy.setReleaseName(source.getReleaseName());
         copy.setStatus(source.getStatus());
         copy.setCluster(source.getCluster());
+        copy.setCatalogName(source.getCatalogName());
+        copy.setCatalogDescription(source.getCatalogDescription());
+        copy.setCatalogReleaseDate(source.getCatalogReleaseDate());
+        copy.setCatalogStatus(source.getCatalogStatus());
+        copy.setMaintainer(source.getMaintainer());
 
         List<Recipe> copiedRecipes = new ArrayList<>();
         if (source.getRecipes() != null) {
@@ -137,7 +142,12 @@ public class HelmReleaseService {
             String version = root.get("chartVersion").asText();
             String releaseName = cm.getMetadata().getAnnotations()
                     .getOrDefault(ANNOTATION_RELEASE_NAME, "unknown");
-                String status = root.has("status") ? root.get("status").asText() : "deployed";
+            String status = root.has("status") ? root.get("status").asText() : "deployed";
+            String catalogName = root.has("catalog_name") ? root.get("catalog_name").asText() : "";
+            String catalogDescription = root.has("catalog_description") ? root.get("catalog_description").asText() : "";
+            String catalogReleaseDate = root.has("release_date") ? root.get("release_date").asText() : "";
+            String catalogStatus = root.has("catalog_status") ? root.get("catalog_status").asText() : "";
+            String maintainer = root.has("maintainer") ? root.get("maintainer").asText() : "";
 
             List<Recipe> recipes = new ArrayList<>();
             Map<String, List<String>> legacyFromByTarget = new LinkedHashMap<>();
@@ -223,7 +233,17 @@ public class HelmReleaseService {
                 }
             }
 
-            return new HelmRelease(version, releaseName, status, cluster, recipes);
+                return new HelmRelease(
+                    version,
+                    releaseName,
+                    status,
+                    cluster,
+                    catalogName,
+                    catalogDescription,
+                    catalogReleaseDate,
+                    catalogStatus,
+                    maintainer,
+                    recipes);
 
         } catch (Exception e) {
             log.warn("Parse error: {}", e.getMessage());
@@ -300,15 +320,12 @@ public class HelmReleaseService {
     }
 
     public HelmRelease updateHelmRelease(String cluster, String version, HelmRelease release) {
-        if (draftsForCluster(cluster).containsKey(version)) {
-            release.setVersion(version);
-            storeDraft(cluster, release);
-            return getDraft(cluster, version);
-        }
-
         if (getHelmRelease(cluster, version) == null) return null;
+
+        release.setVersion(version);
+        storeDraft(cluster, release);
         updateConfigMap(cluster, version, release);
-        return release;
+        return getDraft(cluster, version);
     }
 
     public boolean deleteHelmRelease(String cluster, String version) {
@@ -809,6 +826,21 @@ public class HelmReleaseService {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("chartVersion", release.getVersion());
             data.put("status", release.getStatus());
+            if (release.getCatalogName() != null && !release.getCatalogName().isBlank()) {
+                data.put("catalog_name", release.getCatalogName());
+            }
+            if (release.getCatalogDescription() != null && !release.getCatalogDescription().isBlank()) {
+                data.put("catalog_description", release.getCatalogDescription());
+            }
+            if (release.getCatalogReleaseDate() != null && !release.getCatalogReleaseDate().isBlank()) {
+                data.put("release_date", release.getCatalogReleaseDate());
+            }
+            if (release.getCatalogStatus() != null && !release.getCatalogStatus().isBlank()) {
+                data.put("catalog_status", release.getCatalogStatus());
+            }
+            if (release.getMaintainer() != null && !release.getMaintainer().isBlank()) {
+                data.put("maintainer", release.getMaintainer());
+            }
 
             List<Map<String, Object>> recipes = new ArrayList<>();
 

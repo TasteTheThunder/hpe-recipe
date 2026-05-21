@@ -102,7 +102,7 @@ export default function CatalogPage() {
         }}>{error}</div>
       )}
 
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 20px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.text }}>
             Catalogs
@@ -133,21 +133,33 @@ export default function CatalogPage() {
         )}
 
         {!loading && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns:
-                'repeat(auto-fit, minmax(420px, 1fr))',
-              gap: 24,
-              alignItems: 'stretch',
-              marginBottom: 24,
-            }}
-          >
+          <>
+            <div
+              className="catalog-grid"
+              style={{
+                display: 'grid',
+                gap: 24,
+                alignItems: 'stretch',
+                marginBottom: 24,
+              }}
+            >
             {catalogs.map((cat) => {
               // Metadata: cluster, total components, last updated (mocked for now)
               const totalComponents = (cat.recipes || []).reduce((acc, r) => acc + (r.components ? Object.keys(r.components).length : 0), 0);
               // TODO: Replace with real last updated if available
               const lastUpdated = 'Updated 2h ago';
+              const catalogTitle = cat.catalogName || cat.catalog_name || cat.name || `Cluster ${cluster.toUpperCase()} Catalog`;
+              const rawStatus = cat.catalogStatus || cat.catalog_status || '';
+              const catalogStatus = rawStatus.trim() ? rawStatus : '';
+              const catalogMaintainer = cat.maintainer || '';
+              const releaseName = cat.releaseName || '';
+              const statusColor = catalogStatus === 'GA'
+                ? T.green
+                : catalogStatus === 'Beta'
+                  ? T.yellow
+                  : catalogStatus === 'Deprecated'
+                    ? T.red
+                    : T.blue;
               return (
                 <div
                   key={cat.version}
@@ -155,7 +167,7 @@ export default function CatalogPage() {
                     ...cardStyle,
                     display: 'flex',
                     flexDirection: 'column',
-                    minHeight: 320,
+                    minHeight: 280,
                     height: 'auto',
                     boxShadow: '0 2px 12px 0 rgba(0,0,0,0.10)',
                     transition: 'box-shadow 0.2s, border 0.2s, transform 0.2s',
@@ -176,20 +188,42 @@ export default function CatalogPage() {
                 >
                   {/* Card Content */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: T.teal, marginBottom: 2 }}>
-                      Catalog {cat.version}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: T.teal }}>
+                        {catalogTitle}
+                      </div>
+                      {catalogStatus && (
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                          background: `${statusColor}18`, color: statusColor,
+                        }}>
+                          {catalogStatus}
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 10 }}>
-                      {cat.name || `Cluster ${cluster.toUpperCase()} Catalog`}
+                    <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 2 }}>
+                      v{cat.version}
                     </div>
+                    {releaseName && (
+                      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 2 }}>
+                        {releaseName}
+                      </div>
+                    )}
+                    {catalogMaintainer && (
+                      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
+                        {catalogMaintainer}
+                      </div>
+                    )}
                     {/* Metadata */}
                     <div style={{
                       fontSize: 10.5,
                       color: T.textMuted,
-                      marginBottom: 16,
+                      marginBottom: 12,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 8,
+                      gap: 12,
+                      flexWrap: 'nowrap',
+                      whiteSpace: 'nowrap',
                       opacity: 0.7,
                       fontWeight: 400,
                     }}>
@@ -202,7 +236,7 @@ export default function CatalogPage() {
                     <div style={{
                       padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                       background: `${T.blue}18`, color: T.blue, whiteSpace: 'nowrap',
-                      marginBottom: 14,
+                      marginBottom: 10,
                       alignSelf: 'flex-start',
                     }}>
                       {(cat.recipes || []).length} recipes
@@ -284,7 +318,17 @@ export default function CatalogPage() {
                 </div>
               );
             })}
-          </div>
+            </div>
+            <style>{`
+              .catalog-grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+              @media (min-width: 768px) {
+                .catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+              }
+              @media (min-width: 1200px) {
+                .catalog-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+              }
+            `}</style>
+          </>
         )}
       </div>
     </div>

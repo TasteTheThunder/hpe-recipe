@@ -21,10 +21,14 @@ const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version 
 
 export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel }) {
   const [description, setDescription] = useState(recipe.description || '');
+  const [releaseDate, setReleaseDate] = useState(recipe.release_date || '');
+  const [status, setStatus] = useState(recipe.status || 'GA');
+  const [releaseNotes, setReleaseNotes] = useState(recipe.release_notes || '');
   const [components, setComponents] = useState(
     Object.entries(recipe.components || {}).map(([name, spec]) => ({
       name,
       version: readVersion(spec),
+      releaseDate: spec?.release_date || '',
       upgradeFrom: readUpgradeList(spec, 'upgrade_from', 'upgradeFrom').join(', '),
       upgradeTo: readUpgradeList(spec, 'upgrade_to', 'upgradeTo').join(', '),
     }))
@@ -37,7 +41,10 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
     setComponents(next);
   };
 
-  const addComponent = () => setComponents([...components, { name: '', version: '', upgradeFrom: '', upgradeTo: '' }]);
+  const addComponent = () => setComponents([
+    ...components,
+    { name: '', version: '', releaseDate: '', upgradeFrom: '', upgradeTo: '' },
+  ]);
   const removeComponent = (i) => setComponents(components.filter((_, j) => j !== i));
 
   const toggleUpgrade = (rv) => {
@@ -53,6 +60,7 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
         const toList = parseUpgradeList(c.upgradeTo);
         compMap[compName] = {
           version: c.version.trim(),
+          ...(c.releaseDate.trim() ? { release_date: c.releaseDate.trim() } : {}),
           upgrade_from: fromList,
           upgrade_to: toList,
         };
@@ -63,6 +71,9 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
     onSave({
       version: recipeVersion,
       description: normalizeRecipeDescription(description, recipeVersion),
+      ...(releaseDate.trim() ? { release_date: releaseDate.trim() } : {}),
+      ...(status.trim() ? { status: status.trim() } : {}),
+      ...(releaseNotes.trim() ? { release_notes: releaseNotes.trim() } : {}),
       components: compMap,
       upgrade_to: normalizedUpgradeTo,
     });
@@ -72,9 +83,40 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
 
   return (
     <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <div>
+          <label style={labelStyle}>Release Date</label>
+          <input
+            style={inputStyle}
+            type="date"
+            value={releaseDate}
+            onChange={(e) => setReleaseDate(e.target.value)}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Status</label>
+          <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="GA">GA</option>
+            <option value="Beta">Beta</option>
+            <option value="Deprecated">Deprecated</option>
+            <option value="Retired">Retired</option>
+            <option value="Preview">Preview</option>
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Description</label>
+          <input style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+      </div>
+
       <div style={{ marginBottom: 12 }}>
-        <label style={labelStyle}>Description</label>
-        <input style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} />
+        <label style={labelStyle}>Release Notes</label>
+        <input
+          style={inputStyle}
+          placeholder="e.g. Performance and stability improvements"
+          value={releaseNotes}
+          onChange={(e) => setReleaseNotes(e.target.value)}
+        />
       </div>
 
       <label style={{ ...labelStyle, marginBottom: 8 }}>Components</label>
@@ -82,7 +124,7 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
         {components.map((c, i) => (
           <div key={i} style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr 1fr auto',
+            gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr auto',
             gap: 8,
             alignItems: 'center',
           }}>
@@ -90,6 +132,8 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
               onChange={(e) => updateComp(i, 'name', e.target.value)} placeholder="Component" />
             <input style={{ ...inputStyle, flex: 1 }} value={c.version}
               onChange={(e) => updateComp(i, 'version', e.target.value)} placeholder="Version" />
+            <input style={{ ...inputStyle, flex: 1 }} value={c.releaseDate || ''}
+              onChange={(e) => updateComp(i, 'releaseDate', e.target.value)} placeholder="Release Date" type="date" />
             <input style={{ ...inputStyle, flex: 1 }} value={c.upgradeFrom || ''}
               onChange={(e) => updateComp(i, 'upgradeFrom', e.target.value)} placeholder="Upgradeable from" />
             <input style={{ ...inputStyle, flex: 1 }} value={c.upgradeTo || ''}

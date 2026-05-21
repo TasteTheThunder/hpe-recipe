@@ -60,6 +60,12 @@ public class HelmReleaseController {
             summary.put("releaseName", release.getReleaseName());
             summary.put("status", release.getStatus());
             summary.put("cluster", cluster);
+            if (release.getCatalogName() != null && !release.getCatalogName().isBlank()) {
+                summary.put("catalog_name", release.getCatalogName());
+            }
+            if (release.getCatalogStatus() != null && !release.getCatalogStatus().isBlank()) {
+                summary.put("catalog_status", release.getCatalogStatus());
+            }
 
             lightweight.add(summary);
         }

@@ -6,6 +6,7 @@ import {
   btnSecondary,
   cardStyle,
   labelStyle,
+  inputStyle,
 } from '../../ui/styles';
 import EditRecipeInline from './EditRecipeInline';
 import { normalizeRecipeDescription, getRecipeUpgradeFrom, getRecipeUpgradeTo } from './utils';
@@ -18,11 +19,23 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
   const [editingRecipe, setEditingRecipe] = useState(null);
+  const [editingCatalog, setEditingCatalog] = useState(false);
+  const [catalogDraft, setCatalogDraft] = useState({
+    releaseName: '',
+    catalogName: '',
+    catalogDescription: '',
+    catalogReleaseDate: '',
+    catalogStatus: 'GA',
+    maintainer: '',
+  });
 
   const fetchDetail = () => {
     return fetch(`${API_BASE}/helm-releases/${release.version}?cluster=${cluster}`)
       .then((r) => r.json())
-      .then(setDetail)
+      .then((data) => {
+        setDetail(data);
+        return data;
+      })
       .catch(() => {});
   };
 
@@ -78,10 +91,81 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
       .catch((err) => onNotify(err.message, true));
   };
 
+  const openCatalogEditor = async () => {
+    let source = detail;
+    if (!source) {
+      source = await fetchDetail();
+    }
+    source = source || detail || release;
+    if (!source) return;
+    setCatalogDraft({
+      releaseName: source.releaseName || '',
+      catalogName: source.catalogName || source.catalog_name || '',
+      catalogDescription: source.catalogDescription || source.catalog_description || '',
+      catalogReleaseDate: source.catalogReleaseDate || source.release_date || '',
+      catalogStatus: source.catalogStatus || source.catalog_status || 'GA',
+      maintainer: source.maintainer || '',
+    });
+    setEditingCatalog(true);
+  };
+
+  const handleSaveCatalog = () => {
+    const source = detail || release;
+    if (!source) return;
+    const payload = {
+      version: source.version,
+      releaseName: catalogDraft.releaseName.trim() || source.releaseName,
+      status: source.status,
+      catalog_name: catalogDraft.catalogName.trim(),
+      catalog_description: catalogDraft.catalogDescription.trim(),
+      release_date: catalogDraft.catalogReleaseDate,
+      catalog_status: catalogDraft.catalogStatus,
+      maintainer: catalogDraft.maintainer.trim(),
+      recipes: source.recipes || [],
+    };
+
+    const optimistic = {
+      ...source,
+      releaseName: payload.releaseName,
+      catalogName: payload.catalog_name,
+      catalogDescription: payload.catalog_description,
+      catalogReleaseDate: payload.release_date,
+      catalogStatus: payload.catalog_status,
+      maintainer: payload.maintainer,
+    };
+    setDetail(optimistic);
+
+    fetch(`${API_BASE}/helm-releases/${release.version}?cluster=${cluster}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          let payloadErr = {};
+          try { payloadErr = await r.json(); } catch { payloadErr = {}; }
+          throw new Error(payloadErr.error || 'Failed to update catalog');
+        }
+        return r.json();
+      })
+      .then((updated) => {
+        setDetail(updated);
+        setEditingCatalog(false);
+        onNotify('Catalog updated successfully. Redeploy required to apply changes.');
+        onRefresh();
+      })
+      .catch((err) => {
+        onNotify(err.message, true);
+        fetchDetail();
+      });
+  };
+
   const recipes = detail?.recipes || [];
-  const statusColor = release.status === 'deployed' ? T.green
-    : release.status === 'failed' || release.status === 'push_failed' ? T.red
-    : release.status === 'deploying' ? T.blue
+  const displayStatus = detail?.status || release.status;
+  const displayReleaseName = detail?.releaseName || release.releaseName;
+  const statusColor = displayStatus === 'deployed' ? T.green
+    : displayStatus === 'failed' || displayStatus === 'push_failed' ? T.red
+    : displayStatus === 'deploying' ? T.blue
     : T.yellow;
 
   const handleDeploy = async () => {
@@ -116,11 +200,11 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
               Helm Chart {release.version}
             </div>
             <div style={{ fontSize: 13, color: T.textMuted, marginTop: 2 }}>
-              {release.releaseName}
+              {displayReleaseName}
               <span style={{
                 marginLeft: 10, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
                 background: `${statusColor}18`, color: statusColor,
-              }}>{release.status}</span>
+              }}>{displayStatus}</span>
             </div>
           </div>
           <span style={{
@@ -130,12 +214,15 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
           }}>▼</span>
         </div>
         <div style={{ display: 'flex', gap: 8, marginLeft: 12 }}>
-          {release.status !== 'deploying' && (
+          <button onClick={openCatalogEditor} style={{
+            ...btnSecondary, padding: '6px 14px', fontSize: 12,
+          }}>Edit Catalog</button>
+          {displayStatus !== 'deploying' && (
             <button onClick={handleDeploy} style={{
               ...btnPrimary, padding: '6px 14px', fontSize: 12,
             }}>Deploy</button>
           )}
-          {release.status === 'deploying' && (
+          {displayStatus === 'deploying' && (
             <span style={{
               padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
               background: `${T.blue}18`, color: T.blue, border: `1px solid ${T.blue}44`,
@@ -197,7 +284,30 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
                       <div style={{ fontSize: 15, fontWeight: 700, color: T.teal }}>
                         Recipe v{recipe.version}
                       </div>
-                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{normalizeRecipeDescription(recipe.description, recipe.version)}</div>
+                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
+                        {normalizeRecipeDescription(recipe.description, recipe.version)}
+                      </div>
+                      {(recipe.release_date || recipe.status) && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                          {recipe.release_date && (
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                              background: `${T.blue}15`, color: T.blue,
+                            }}>{recipe.release_date}</span>
+                          )}
+                          {recipe.status && (
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                              background: `${T.teal}18`, color: T.teal,
+                            }}>{recipe.status}</span>
+                          )}
+                        </div>
+                      )}
+                      {recipe.release_notes && (
+                        <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6 }}>
+                          {recipe.release_notes}
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => setEditingRecipe(recipe.version)}
@@ -274,6 +384,96 @@ export default function ReleaseCard({ release, onDeploy, cluster, onRefresh, onN
               );
             })()
           ))}
+        </div>
+      )}
+      {editingCatalog && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120,
+        }} onClick={() => setEditingCatalog(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 16,
+            padding: 24, width: 620, maxWidth: '90vw',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: T.text }}>Edit Catalog</h3>
+              <button onClick={() => setEditingCatalog(false)} style={{
+                background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 6,
+                color: T.textMuted, width: 28, height: 28, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+              }}>×</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={labelStyle}>Catalog Name</label>
+                <input
+                  style={inputStyle}
+                  value={catalogDraft.catalogName}
+                  onChange={(e) => setCatalogDraft((prev) => ({ ...prev, catalogName: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Catalog Status</label>
+                <select
+                  style={inputStyle}
+                  value={catalogDraft.catalogStatus}
+                  onChange={(e) => setCatalogDraft((prev) => ({ ...prev, catalogStatus: e.target.value }))}
+                >
+                  <option value="GA">GA</option>
+                  <option value="Beta">Beta</option>
+                  <option value="Deprecated">Deprecated</option>
+                  <option value="Internal">Internal</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Release Name</label>
+                <input
+                  style={{ ...inputStyle, opacity: 0.7 }}
+                  value={catalogDraft.releaseName}
+                  readOnly
+                />
+                <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+                  Auto-generated from chart version
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={labelStyle}>Release Date</label>
+                <input
+                  style={inputStyle}
+                  type="date"
+                  value={catalogDraft.catalogReleaseDate}
+                  onChange={(e) => setCatalogDraft((prev) => ({ ...prev, catalogReleaseDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Maintainer</label>
+                <input
+                  style={inputStyle}
+                  value={catalogDraft.maintainer}
+                  onChange={(e) => setCatalogDraft((prev) => ({ ...prev, maintainer: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Catalog Description</label>
+              <input
+                style={inputStyle}
+                value={catalogDraft.catalogDescription}
+                onChange={(e) => setCatalogDraft((prev) => ({ ...prev, catalogDescription: e.target.value }))}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditingCatalog(false)} style={btnSecondary}>Cancel</button>
+              <button onClick={handleSaveCatalog} style={btnPrimary}>Save</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

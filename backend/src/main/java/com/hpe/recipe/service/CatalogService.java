@@ -22,7 +22,20 @@ public class CatalogService {
 
     public List<Catalog> getAllCatalogs(String cluster) {
         return helmReleaseService.getAllHelmReleases(cluster).stream()
-                .map(r -> new Catalog(r.getVersion(), r.getReleaseName(), r.getRecipes()))
+            .map(r -> {
+                String displayName = (r.getCatalogName() != null && !r.getCatalogName().isBlank())
+                    ? r.getCatalogName()
+                    : r.getReleaseName();
+                return new Catalog(
+                r.getVersion(),
+                displayName,
+                r.getCatalogName(),
+                r.getCatalogDescription(),
+                r.getCatalogReleaseDate(),
+                r.getCatalogStatus(),
+                r.getMaintainer(),
+                r.getRecipes());
+            })
                 .collect(Collectors.toList());
     }
 

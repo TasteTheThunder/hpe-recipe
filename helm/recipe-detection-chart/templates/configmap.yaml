@@ -7,5 +7,13 @@ metadata:
 data:
   chart-version: {{ .Values.recipeData.chartVersion | quote }}
   recipe-data.json: |
-    {{- $data := dict "chartVersion" .Values.recipeData.chartVersion "recipes" .Values.recipeData.recipes }}
+    {{- $data := dict
+        "chartVersion" .Values.recipeData.chartVersion
+        "catalog_name" (default "" .Values.recipeData.catalog_name)
+        "catalog_description" (default "" .Values.recipeData.catalog_description)
+        "release_date" (default "" .Values.recipeData.release_date)
+        "catalog_status" (default "" .Values.recipeData.catalog_status)
+        "maintainer" (default "" .Values.recipeData.maintainer)
+        "recipes" .Values.recipeData.recipes
+      }}
     {{ $data | toJson | nindent 4 }}
