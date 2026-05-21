@@ -1,10 +1,10 @@
 recipeData:
   chartVersion: 3.4.6
-  catalog_name: Aditya Catalog
-  catalog_description: important catlog for testing
+  catalog_name: Aditya Catalog v2
+  catalog_description: this is to check
   release_date: '2026-05-19'
   catalog_status: GA
-  maintainer: HPE DEVOPS TEAM
+  maintainer: HPE Devops Team
   recipes:
   - version: 2.1.0
     description: Base analytics platform release
