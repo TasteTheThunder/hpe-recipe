@@ -152,6 +152,8 @@ export default function CatalogPage() {
               const rawStatus = cat.catalogStatus || cat.catalog_status || '';
               const catalogStatus = rawStatus.trim() ? rawStatus : '';
               const catalogMaintainer = cat.maintainer || '';
+              const catalogDescription = cat.catalogDescription || cat.catalog_description || '';
+              const catalogReleaseDate = cat.catalogReleaseDate || cat.release_date || '';
               const releaseName = cat.releaseName || '';
               const statusColor = catalogStatus === 'GA'
                 ? T.green
@@ -212,6 +214,21 @@ export default function CatalogPage() {
                     {catalogMaintainer && (
                       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
                         {catalogMaintainer}
+                      </div>
+                    )}
+                    {catalogDescription && (
+                      <div style={{
+                        fontSize: 12,
+                        color: T.textDim,
+                        marginBottom: 8,
+                        lineHeight: 1.4,
+                      }}>
+                        {catalogDescription}
+                      </div>
+                    )}
+                    {catalogReleaseDate && (
+                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
+                        Released: {catalogReleaseDate}
                       </div>
                     )}
                     {/* Metadata */}
