@@ -33,6 +33,7 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
       upgradeTo: readUpgradeList(spec, 'upgrade_to', 'upgradeTo').join(', '),
     }))
   );
+  const [upgradeFrom, setUpgradeFrom] = useState([...(recipe.upgrade_from || [])]);
   const [upgradeTo, setUpgradeTo] = useState([...(recipe.upgrade_to || [])]);
 
   const updateComp = (i, field, val) => {
@@ -51,6 +52,10 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
     setUpgradeTo((prev) => prev.includes(rv) ? prev.filter((p) => p !== rv) : [...prev, rv]);
   };
 
+  const toggleUpgradeFrom = (rv) => {
+    setUpgradeFrom((prev) => prev.includes(rv) ? prev.filter((p) => p !== rv) : [...prev, rv]);
+  };
+
   const handleSave = () => {
     const compMap = {};
     components.forEach((c) => {
@@ -67,6 +72,7 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
       }
     });
     const recipeVersion = normalizeVersion(recipe.version);
+    const normalizedUpgradeFrom = upgradeFrom.map((p) => normalizeVersion(p)).filter(Boolean);
     const normalizedUpgradeTo = upgradeTo.map((p) => normalizeVersion(p)).filter(Boolean);
     onSave({
       version: recipeVersion,
@@ -75,6 +81,7 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
       ...(status.trim() ? { status: status.trim() } : {}),
       ...(releaseNotes.trim() ? { release_notes: releaseNotes.trim() } : {}),
       components: compMap,
+      upgrade_from: normalizedUpgradeFrom,
       upgrade_to: normalizedUpgradeTo,
     });
   };
@@ -146,8 +153,41 @@ export default function EditRecipeInline({ recipe, allRecipes, onSave, onCancel 
         </button>
       </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <div>
+          <label style={labelStyle}>Upgrade From (comma-separated)</label>
+          <input
+            style={inputStyle}
+            placeholder="e.g. 1.1.1, 1.1.2"
+            value={upgradeFrom.join(', ')}
+            onChange={(e) => setUpgradeFrom(parseUpgradeList(e.target.value))}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Upgrade To (comma-separated)</label>
+          <input
+            style={inputStyle}
+            placeholder="e.g. 1.3.0, 1.4.0"
+            value={upgradeTo.join(', ')}
+            onChange={(e) => setUpgradeTo(parseUpgradeList(e.target.value))}
+          />
+        </div>
+      </div>
+
       {otherRecipes.length > 0 && (
         <>
+          <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade From</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+            {otherRecipes.map((r) => (
+              <button key={`from-${r.version}`} type="button" onClick={() => toggleUpgradeFrom(r.version)} style={{
+                padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                background: upgradeFrom.includes(r.version) ? `${T.blue}22` : T.bgCard,
+                color: upgradeFrom.includes(r.version) ? T.blue : T.textMuted,
+                border: `1px solid ${upgradeFrom.includes(r.version) ? T.blue : T.border}`,
+                cursor: 'pointer',
+              }}>v{r.version}</button>
+            ))}
+          </div>
           <label style={{ ...labelStyle, marginBottom: 8 }}>Upgrade To</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
             {otherRecipes.map((r) => (

@@ -26,6 +26,8 @@ function getRecipeUpgradeTo(recipe) {
 
 function getRecipeUpgradeFrom(recipes, recipe) {
   if (!recipes || !recipe) return [];
+  const explicit = Array.isArray(recipe?.upgrade_from) ? recipe.upgrade_from.filter(Boolean) : [];
+  if (explicit.length > 0) return explicit;
   const targetVersion = recipe.version;
   return recipes
     .filter((r) => Array.isArray(r?.upgrade_to) && r.upgrade_to.includes(targetVersion))

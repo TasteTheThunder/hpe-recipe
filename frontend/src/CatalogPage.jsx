@@ -155,6 +155,16 @@ export default function CatalogPage() {
               const catalogDescription = cat.catalogDescription || cat.catalog_description || '';
               const catalogReleaseDate = cat.catalogReleaseDate || cat.release_date || '';
               const releaseName = cat.releaseName || '';
+              const formattedCatalogDate = (() => {
+                if (!catalogReleaseDate) return '';
+                const parsed = new Date(catalogReleaseDate);
+                if (Number.isNaN(parsed.getTime())) return catalogReleaseDate;
+                return new Intl.DateTimeFormat('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                }).format(parsed);
+              })();
               const statusColor = catalogStatus === 'GA'
                 ? T.green
                 : catalogStatus === 'Beta'
@@ -204,7 +214,8 @@ export default function CatalogPage() {
                       )}
                     </div>
                     <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 2 }}>
-                      v{cat.version}
+                      <span style={{ fontWeight: 700, color: T.textDim }}>Version:</span>{' '}
+                      {cat.version}
                     </div>
                     {releaseName && (
                       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 2 }}>
@@ -213,22 +224,25 @@ export default function CatalogPage() {
                     )}
                     {catalogMaintainer && (
                       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
+                        <span style={{ fontWeight: 700, color: T.textDim }}>Maintainer:</span>{' '}
                         {catalogMaintainer}
                       </div>
                     )}
                     {catalogDescription && (
                       <div style={{
                         fontSize: 12,
-                        color: T.textDim,
+                        color: T.textMuted,
                         marginBottom: 8,
                         lineHeight: 1.4,
                       }}>
+                        <span style={{ fontWeight: 700, color: T.textDim }}>Description:</span>{' '}
                         {catalogDescription}
                       </div>
                     )}
-                    {catalogReleaseDate && (
-                      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
-                        Released: {catalogReleaseDate}
+                    {formattedCatalogDate && (
+                      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
+                        <span style={{ fontWeight: 700, color: T.textDim }}>Released:</span>{' '}
+                        {formattedCatalogDate}
                       </div>
                     )}
                     {/* Metadata */}

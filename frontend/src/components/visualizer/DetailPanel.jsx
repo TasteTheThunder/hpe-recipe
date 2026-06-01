@@ -2,13 +2,26 @@ import T from '../../theme';
 import { getCompTheme } from './compThemes';
 
 const readVersion = (spec) => (typeof spec === 'string' ? spec : (spec?.version || ''));
+const readUpgradeList = (spec, key) => {
+  if (!spec || typeof spec !== 'object') return [];
+  const raw = spec[key];
+  if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof raw === 'string') {
+    return raw.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return [];
+};
 
 export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }) {
   if (!recipe) return null;
   const comps = recipe.components ? Object.entries(recipe.components) : [];
-  const fromPaths = allRecipes
-    .filter((r) => Array.isArray(r?.upgrade_to) && r.upgrade_to.includes(recipe.version))
-    .map((r) => r.version);
+  const explicitFrom = Array.isArray(recipe?.upgrade_from) ? recipe.upgrade_from.filter(Boolean) : [];
+  const fromPaths = explicitFrom.length > 0
+    ? explicitFrom
+    : allRecipes
+      .filter((r) => Array.isArray(r?.upgrade_to) && r.upgrade_to.includes(recipe.version))
+      .map((r) => r.version)
+      .filter(Boolean);
   const toPaths = Array.isArray(recipe.upgrade_to) ? recipe.upgrade_to : [];
 
   return (
@@ -80,19 +93,28 @@ export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }
             const ver = readVersion(spec);
             const compReleaseDate = spec?.release_date || '';
 
+            const explicitPrev = readUpgradeList(spec, 'upgrade_from');
+            const explicitNext = readUpgradeList(spec, 'upgrade_to');
+
             // Find unique previous versions for this component
             const prevVers = fromPaths.map((pv) => {
               const pr = allRecipes.find((r) => r.version === pv);
               return readVersion(pr?.components?.[name]);
             }).filter((v) => v && v !== ver);
-            const uniquePrev = [...new Set(prevVers)];
+            const derivedPrev = [...new Set(prevVers)];
+            const uniquePrev = explicitPrev.length > 0
+              ? explicitPrev.filter((v) => v !== ver)
+              : derivedPrev;
 
             // Find unique next versions
             const nextVers = toPaths.map((tv) => {
               const tr = allRecipes.find((r) => r.version === tv);
               return readVersion(tr?.components?.[name]);
             }).filter((v) => v && v !== ver);
-            const uniqueNext = [...new Set(nextVers)];
+            const derivedNext = [...new Set(nextVers)];
+            const uniqueNext = explicitNext.length > 0
+              ? explicitNext.filter((v) => v !== ver)
+              : derivedNext;
 
             return (
               <div key={name} style={{
@@ -105,11 +127,36 @@ export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }
                   <span style={{ fontSize: 16 }}>{theme.icon}</span>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: T.text, textTransform: 'capitalize' }}>{name}</div>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, color: theme.color,
+                        background: theme.bg, padding: '2px 8px', borderRadius: 4,
+                      }}>{ver}</span>
+                    </div>
                     {(uniquePrev.length > 0 || uniqueNext.length > 0) && (
-                      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>
-                        {uniquePrev.length > 0 && <span>{uniquePrev.join(', ')} → </span>}
-                        <span style={{ color: theme.color, fontWeight: 700 }}>{ver}</span>
-                        {uniqueNext.length > 0 && <span> → {uniqueNext.join(', ')}</span>}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+                        {uniquePrev.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 10, color: T.textMuted, minWidth: 40 }}>From</span>
+                            {uniquePrev.map((p) => (
+                              <span key={`from-${name}-${p}`} style={{
+                                fontSize: 10, fontWeight: 700, color: T.blue,
+                                background: `${T.blue}18`, padding: '2px 6px', borderRadius: 4,
+                              }}>v{p}</span>
+                            ))}
+                          </div>
+                        )}
+                        {uniqueNext.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 10, color: T.textMuted, minWidth: 40 }}>To</span>
+                            {uniqueNext.map((p) => (
+                              <span key={`to-${name}-${p}`} style={{
+                                fontSize: 10, fontWeight: 700, color: T.yellow,
+                                background: `${T.yellow}18`, padding: '2px 6px', borderRadius: 4,
+                              }}>v{p}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     {compReleaseDate && (
@@ -119,12 +166,7 @@ export default function DetailPanel({ recipe, helmVersion, allRecipes, onClose }
                     )}
                   </div>
                 </div>
-                {(!uniquePrev.length && !uniqueNext.length) && (
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, color: theme.color,
-                    background: theme.bg, padding: '2px 8px', borderRadius: 4,
-                  }}>{ver}</span>
-                )}
+                <span style={{ fontSize: 12, color: T.textMuted }} />
               </div>
             );
           })}

@@ -92,6 +92,9 @@ public class HelmReleaseService {
                 r.setUpgradeTo(recipe.getUpgradeTo() == null
                         ? new ArrayList<>()
                     : new ArrayList<>(recipe.getUpgradeTo()));
+                r.setUpgradeFrom(recipe.getUpgradeFrom() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(recipe.getUpgradeFrom()));
                 copiedRecipes.add(r);
             }
         }
@@ -191,10 +194,12 @@ public class HelmReleaseService {
 
                 String versionValue = normalizeVersion(rNode.get("version").asText());
                 List<String> upgradeTo = normalizeVersions(
-                        readStringList(readFirst(rNode, "upgrade_to", "upgradeTo")));
+                    readStringList(readFirst(rNode, "upgrade_to", "upgradeTo")));
                 if (!upgradeTo.isEmpty()) {
                     hasExplicitUpgradeTo = true;
                 }
+                List<String> upgradeFrom = normalizeVersions(
+                    readStringList(readFirst(rNode, "upgrade_from", "upgradeFrom")));
 
                 List<String> legacyFrom = normalizeVersions(readStringList(rNode.get("upgradePaths")));
                 if (!legacyFrom.isEmpty()) {
@@ -208,7 +213,8 @@ public class HelmReleaseService {
                     rNode.has("status") ? rNode.get("status").asText() : "",
                     rNode.has("release_notes") ? rNode.get("release_notes").asText() : "",
                     components,
-                    upgradeTo
+                    upgradeTo,
+                    upgradeFrom
                 ));
             }
 
@@ -600,9 +606,17 @@ public class HelmReleaseService {
         return recipe.getUpgradeTo() != null ? recipe.getUpgradeTo() : Collections.emptyList();
     }
 
+    private List<String> safeUpgradeFrom(Recipe recipe) {
+        return recipe.getUpgradeFrom() != null ? recipe.getUpgradeFrom() : Collections.emptyList();
+    }
+
     private List<String> getUpgradeFromVersions(List<Recipe> recipes, Recipe target) {
         if (recipes == null || target == null || target.getVersion() == null) {
             return Collections.emptyList();
+        }
+        List<String> explicit = safeUpgradeFrom(target);
+        if (!explicit.isEmpty()) {
+            return explicit;
         }
         List<String> fromVersions = new ArrayList<>();
         String targetVersion = target.getVersion();
@@ -862,6 +876,10 @@ public class HelmReleaseService {
                 List<String> upgradeTo = normalizeVersions(r.getUpgradeTo());
                 if (!upgradeTo.isEmpty()) {
                     map.put("upgrade_to", upgradeTo);
+                }
+                List<String> upgradeFrom = normalizeVersions(r.getUpgradeFrom());
+                if (!upgradeFrom.isEmpty()) {
+                    map.put("upgrade_from", upgradeFrom);
                 }
 
                 recipes.add(map);

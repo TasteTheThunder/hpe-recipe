@@ -18,18 +18,23 @@ public class Recipe {
     @JsonProperty("upgrade_to")
     @JsonAlias({"upgradePaths", "upgradeTo", "upgrade_to"})
     private List<String> upgradeTo;
+    @JsonProperty("upgrade_from")
+    @JsonAlias({"upgradeFrom", "upgrade_from"})
+    private List<String> upgradeFrom;
 
     public Recipe() {}
 
-    public Recipe(String version, String description, Map<String, ComponentSpec> components, List<String> upgradeTo) {
+    public Recipe(String version, String description, Map<String, ComponentSpec> components, List<String> upgradeTo,
+                  List<String> upgradeFrom) {
         this.version = version;
         this.description = description;
         this.components = components;
         this.upgradeTo = upgradeTo;
+        this.upgradeFrom = upgradeFrom;
     }
 
     public Recipe(String version, String description, String releaseDate, String status, String releaseNotes,
-                  Map<String, ComponentSpec> components, List<String> upgradeTo) {
+                  Map<String, ComponentSpec> components, List<String> upgradeTo, List<String> upgradeFrom) {
         this.version = version;
         this.description = description;
         this.releaseDate = releaseDate;
@@ -37,6 +42,7 @@ public class Recipe {
         this.releaseNotes = releaseNotes;
         this.components = components;
         this.upgradeTo = upgradeTo;
+        this.upgradeFrom = upgradeFrom;
     }
 
     public String getVersion() { return version; }
@@ -59,5 +65,8 @@ public class Recipe {
 
     public List<String> getUpgradeTo() { return upgradeTo; }
     public void setUpgradeTo(List<String> upgradeTo) { this.upgradeTo = upgradeTo; }
+
+    public List<String> getUpgradeFrom() { return upgradeFrom; }
+    public void setUpgradeFrom(List<String> upgradeFrom) { this.upgradeFrom = upgradeFrom; }
 
 }

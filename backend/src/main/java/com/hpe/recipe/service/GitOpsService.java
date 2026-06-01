@@ -177,6 +177,18 @@ public class GitOpsService {
             if (!paths.isEmpty()) {
                 recipeMap.put("upgrade_to", paths);
             }
+            List<String> pathsFrom = new ArrayList<>();
+            if (recipe.getUpgradeFrom() != null) {
+                recipe.getUpgradeFrom().forEach(p -> {
+                    String normalized = normalizeVersion(p);
+                    if (normalized != null && !normalized.isBlank()) {
+                        pathsFrom.add(quote(normalized));
+                    }
+                });
+            }
+            if (!pathsFrom.isEmpty()) {
+                recipeMap.put("upgrade_from", pathsFrom);
+            }
             recipeMaps.add(recipeMap);
         }
 
