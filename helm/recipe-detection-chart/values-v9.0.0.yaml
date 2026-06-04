@@ -36,7 +36,6 @@ recipeData:
         - 1.4.2
     upgrade_to:
     - 1.4.1
-    - 1.4.2
     upgrade_from:
     - 1.3.9
   - version: 1.4.1
