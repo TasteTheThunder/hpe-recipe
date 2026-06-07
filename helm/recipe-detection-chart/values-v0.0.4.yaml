@@ -1,5 +1,6 @@
 recipeData:
   chartVersion: 0.0.4
+  releaseName: recipe-prod-v0-0-4
   catalog_name: HPE Monitoring Suite
   catalog_description: Advanced monitoring and observability platform
   release_date: '2026-06-05'
