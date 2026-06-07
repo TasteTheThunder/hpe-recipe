@@ -338,6 +338,7 @@ public class HelmReleaseController {
                     .fromHttpUrl(jenkinsUrl)
                     .pathSegment("job", jenkinsJob, "buildWithParameters")
                     .queryParam("CLUSTER", cluster)
+                    .queryParam("DEPLOY_ON_TRIGGER", "true")
                     .queryParam("RELEASE_NAME", releaseName)
                     .queryParam("CHART_VERSION", chartVersion)
                     .toUriString();

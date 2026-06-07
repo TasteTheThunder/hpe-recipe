@@ -5,6 +5,7 @@ pipeline {
         choice(name: 'CLUSTER', choices: ['dev', 'prod', 'qa', 'integration'], description: 'Select target cluster')
         string(name: 'RELEASE_NAME', defaultValue: '', description: 'Optional Helm release name')
         string(name: 'CHART_VERSION', defaultValue: '', description: 'Optional chart version override')
+        booleanParam(name: 'DEPLOY_ON_TRIGGER', defaultValue: false, description: 'Set true for manual/API-triggered deployments')
     }
 
     environment {
@@ -50,6 +51,9 @@ pipeline {
         }
 
         stage('Deploy Helm (Config Only)') {
+            when {
+                expression { return params.DEPLOY_ON_TRIGGER }
+            }
             steps {
                 script {
                     def valuesArg = env.HAS_VERSION_VALUES == 'true'
@@ -80,6 +84,9 @@ pipeline {
         }
 
         stage('Verify ConfigMap') {
+            when {
+                expression { return params.DEPLOY_ON_TRIGGER }
+            }
             steps {
                 script {
                     sh "${HELM_CMD} --kube-context ${params.CLUSTER} list --namespace ${KUBE_NAMESPACE}"
@@ -89,6 +96,9 @@ pipeline {
         }
 
         stage('Update Backend Status') {
+            when {
+                expression { return params.DEPLOY_ON_TRIGGER }
+            }
             steps {
                 script {
                     sh """
@@ -103,15 +113,23 @@ pipeline {
 
     post {
         success {
-            echo "Successfully deployed ${env.RELEASE_NAME} to ${params.CLUSTER}"
+            script {
+                if (params.DEPLOY_ON_TRIGGER) {
+                    echo "Successfully deployed ${env.RELEASE_NAME} to ${params.CLUSTER}"
+                } else {
+                    echo "Build completed without deployment (SCM-triggered or deploy disabled)"
+                }
+            }
         }
         failure {
             script {
-                sh """
-                curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status?cluster=${params.CLUSTER} \
-                -H "Content-Type: application/json" \
-                -d '{"status":"failed"}' 2>/dev/null
-                """
+                if (params.DEPLOY_ON_TRIGGER) {
+                    sh """
+                    curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status?cluster=${params.CLUSTER} \
+                    -H "Content-Type: application/json" \
+                    -d '{"status":"failed"}' 2>/dev/null
+                    """
+                }
             }
         }
         always {
