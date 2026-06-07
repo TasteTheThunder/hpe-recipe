@@ -1,0 +1,65 @@
+recipeData:
+  chartVersion: 0.0.2
+  catalog_name: HPE AI Platform
+  release_date: '2026-06-07'
+  catalog_status: Beta
+  maintainer: HPE AI Team
+  recipes:
+  - version: 2.0.0
+    description: Initial AI platform release
+    release_date: '2026-06-08'
+    status: Beta
+    release_notes: Introduced model serving and training services
+    components:
+      Model-Server:
+        version: 4.0.0
+        release_date: '2026-06-08'
+        upgrade_from:
+        - 3.9.0
+        upgrade_to:
+        - 4.1.0
+      Redis-Cache:
+        version: 5.0.0
+        release_date: '2026-06-08'
+        upgrade_from:
+        - 4.9.0
+        upgrade_to:
+        - 5.1.0
+      Vector-Database:
+        version: 6.0.0
+        release_date: '2026-06-08'
+        upgrade_from:
+        - 5.9.0
+        upgrade_to:
+        - 6.1.0
+    upgrade_to:
+    - 2.1.0
+  - version: 2.1.0
+    description: Performance and scalability improvements
+    release_date: '2026-06-09'
+    status: Beta
+    release_notes: Enhanced model serving throughput and cache optimization
+    components:
+      Model-Server:
+        version: 4.1.0
+        release_date: '2026-06-09'
+        upgrade_from:
+        - 4.0.0
+        upgrade_to:
+        - 4.2.0
+      Redis-Cache:
+        version: 5.1.0
+        release_date: '2026-06-09'
+        upgrade_from:
+        - 5.0.0
+        upgrade_to:
+        - 5.2.0
+      Vector-Database:
+        version: 6.1.0
+        release_date: '2026-06-09'
+        upgrade_from:
+        - 6.0.0
+        upgrade_to:
+        - 6.2.0
+    upgrade_from:
+    - 2.0.0
