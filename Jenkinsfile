@@ -41,6 +41,7 @@ pipeline {
                     env.CHART_VERSION = params.CHART_VERSION?.trim() ? params.CHART_VERSION.trim() : versionLine.split(':')[1].trim()
                     env.RELEASE_NAME = params.RELEASE_NAME?.trim() ? params.RELEASE_NAME.trim() : "recipe-${params.CLUSTER}-v${env.CHART_VERSION.replace('.', '-')}"
                     env.DID_DEPLOY = 'false'
+                    env.IS_DEPLOY_BUILD = currentBuild.rawBuild.getCause(hudson.triggers.SCMTrigger.SCMTriggerCause) == null ? 'true' : 'false'
 
                     env.VALUES_FILE = "${CHART_DIR}/values-v${env.CHART_VERSION}.yaml"
                     env.HAS_VERSION_VALUES = fileExists(env.VALUES_FILE) ? 'true' : 'false'
@@ -132,7 +133,7 @@ pipeline {
         }
         failure {
             script {
-                if (env.DID_DEPLOY == 'true') {
+                if (env.IS_DEPLOY_BUILD == 'true') {
                     sh """
                     curl -s -X PUT ${API_URL}/helm-releases/${env.CHART_VERSION}/status?cluster=${params.CLUSTER} \
                     -H "Content-Type: application/json" \
