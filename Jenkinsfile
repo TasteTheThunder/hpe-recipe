@@ -3,6 +3,8 @@ pipeline {
 
     parameters {
         choice(name: 'CLUSTER', choices: ['dev', 'prod', 'qa', 'integration'], description: 'Select target cluster')
+        string(name: 'RELEASE_NAME', defaultValue: '', description: 'Optional Helm release name')
+        string(name: 'CHART_VERSION', defaultValue: '', description: 'Optional chart version override')
     }
 
     environment {
@@ -35,8 +37,8 @@ pipeline {
                     def chartYaml = readFile("${CHART_DIR}/Chart.yaml")
                     def versionLine = chartYaml.readLines().find { it.startsWith('version:') }
 
-                    env.CHART_VERSION = versionLine.split(':')[1].trim()
-                    env.RELEASE_NAME = "recipe-${params.CLUSTER}-v${env.CHART_VERSION.replace('.', '-')}"
+                    env.CHART_VERSION = params.CHART_VERSION?.trim() ? params.CHART_VERSION.trim() : versionLine.split(':')[1].trim()
+                    env.RELEASE_NAME = params.RELEASE_NAME?.trim() ? params.RELEASE_NAME.trim() : "recipe-${params.CLUSTER}-v${env.CHART_VERSION.replace('.', '-')}"
 
                     env.VALUES_FILE = "${CHART_DIR}/values-v${env.CHART_VERSION}.yaml"
                     env.HAS_VERSION_VALUES = fileExists(env.VALUES_FILE) ? 'true' : 'false'

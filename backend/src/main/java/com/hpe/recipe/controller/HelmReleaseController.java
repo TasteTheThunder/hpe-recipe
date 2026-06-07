@@ -177,8 +177,8 @@ public class HelmReleaseController {
 
         try {
             gitOpsService.generateAndPush(release);
-            // 🔥 NEW: Trigger Jenkins with cluster
-            triggerJenkins(cluster);
+            // 🔥 NEW: Trigger Jenkins with cluster and user-provided release name
+            triggerJenkins(cluster, release.getReleaseName(), version);
 
             return ResponseEntity.ok(Map.of(
                     "message", "Pushed to Git. Jenkins will deploy shortly.",
@@ -301,7 +301,7 @@ public class HelmReleaseController {
         return helmReleaseService.getUpgradePathsBetweenHelmVersions(cluster, from, to);
     }
 
-    private void triggerJenkins(String cluster) {
+    private void triggerJenkins(String cluster, String releaseName, String chartVersion) {
 
         if (!StringUtils.hasText(jenkinsUser) || !StringUtils.hasText(jenkinsToken)) {
             throw new IllegalStateException("Jenkins credentials are not configured (JENKINS_USER/JENKINS_TOKEN)");
@@ -338,6 +338,8 @@ public class HelmReleaseController {
                     .fromHttpUrl(jenkinsUrl)
                     .pathSegment("job", jenkinsJob, "buildWithParameters")
                     .queryParam("CLUSTER", cluster)
+                    .queryParam("RELEASE_NAME", releaseName)
+                    .queryParam("CHART_VERSION", chartVersion)
                     .toUriString();
 
             log.info("Triggering Jenkins URL: {}", url);
