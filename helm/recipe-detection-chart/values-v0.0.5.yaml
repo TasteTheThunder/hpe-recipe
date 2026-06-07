@@ -2,7 +2,7 @@ recipeData:
   chartVersion: 0.0.5
   releaseName: runtime-v0-0-5
   catalog_name: hpe ana
-  catalog_description: hello
+  catalog_description: hello guys
   release_date: '2026-06-09'
   catalog_status: GA
   maintainer: okkkk
