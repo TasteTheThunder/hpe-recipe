@@ -1,0 +1,24 @@
+recipeData:
+  chartVersion: 0.0.8
+  releaseName: monitoring-suite-v0-0-8
+  catalog_name: okkkk boy
+  catalog_description: hello
+  catalog_status: GA
+  maintainer: hpe suit
+  recipes:
+  - version: 1.2.0
+    description: okkkk
+    release_date: '2026-06-02'
+    status: GA
+    release_notes: yes hello
+    components:
+      adi:
+        version: 3.0.0
+        release_date: '2026-06-01'
+        upgrade_from:
+        - 2.9.0
+        upgrade_to:
+        - '3.1'
+        - '0'
+    upgrade_from:
+    - 1.1.0
