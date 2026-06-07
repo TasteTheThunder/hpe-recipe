@@ -1,0 +1,70 @@
+recipeData:
+  chartVersion: 0.0.1
+  catalog_name: HPE Analytics Runtime
+  catalog_description: Enterprise analytics and streaming platform
+  release_date: '2026-06-05'
+  catalog_status: GA
+  maintainer: HPE DevOps Team
+  recipes:
+  - version: 1.0.0
+    description: Initial production release
+    release_date: '2026-06-06'
+    status: GA
+    release_notes: Base analytics platform release
+    components:
+      Analytics Engine:
+        version: 1.0.0
+        release_date: '2026-06-06'
+        upgrade_from:
+        - 0.9.0
+        upgrade_to:
+        - 1.1.0
+      Postgres-Db:
+        version: 2.0.0
+        release_date: '2026-06-06'
+        upgrade_from:
+        - 1.8.0
+        - 1.9.0
+        upgrade_to:
+        - 2.1.0
+        - 2.2.0
+      Stream-Processor:
+        version: 3.0.0
+        release_date: '2026-06-06'
+        upgrade_from:
+        - 2.8.0
+        - 2.9.0
+        upgrade_to:
+        - 3.1.0
+    upgrade_to:
+    - 1.1.0
+    upgrade_from:
+    - 0.9.0
+  - version: 1.1.0
+    description: Minor feature and stability release
+    release_date: '2026-06-07'
+    status: GA
+    release_notes: Upgraded analytics and streaming services
+    components:
+      Analytics-Engine:
+        version: 1.1.0
+        release_date: '2026-06-07'
+        upgrade_from:
+        - 0.9.0
+        - 1.0.0
+        upgrade_to:
+        - 1.2.0
+      Postgres-Db:
+        version: 2.1.0
+        release_date: '2026-06-07'
+        upgrade_from:
+        - 2.0.0
+        upgrade_to:
+        - 2.2.0
+      Stream-Processor:
+        version: 3.1.0
+        release_date: '2026-06-07'
+        upgrade_from:
+        - 3.0.0
+        upgrade_to:
+        - 3.2.0
