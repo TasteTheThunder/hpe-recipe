@@ -1,0 +1,39 @@
+recipeData:
+  chartVersion: 0.0.5
+  releaseName: recipe-v0-0-5
+  catalog_name: HPE Analytics Runtime
+  catalog_description: No Description
+  release_date: '2026-06-07'
+  catalog_status: GA
+  maintainer: HPE AI Team
+  recipes:
+  - version: 3.2.0
+    description: Major observability platform upgrade
+    release_date: '2026-06-07'
+    status: GA
+    release_notes: Upgraded monitoring stack with enhanced scalability, dashboard
+      performance, and alert processing capabilities.
+    components:
+      Alert-Manager:
+        version: 4.5.0
+        release_date: '2026-06-07'
+        upgrade_from:
+        - 4.4.0
+        upgrade_to:
+        - 4.6.0
+      Grafana:
+        version: 3.5.0
+        release_date: '2026-06-07'
+        upgrade_from:
+        - 3.4.0
+        upgrade_to:
+        - 3.6.0
+      Prometheus:
+        version: 2.5.0
+        release_date: '2026-06-07'
+        upgrade_from:
+        - 2.4.0
+        upgrade_to:
+        - 2.6.0
+    upgrade_from:
+    - 3.1.0
