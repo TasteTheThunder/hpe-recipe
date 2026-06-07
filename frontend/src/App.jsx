@@ -297,7 +297,7 @@ export default function App() {
                 whiteSpace: "nowrap",
               }}
             >
-              Compare
+              Compare Catalogs
             </button>
           )}
           <Link

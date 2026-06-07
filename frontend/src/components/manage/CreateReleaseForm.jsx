@@ -388,6 +388,10 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!version.trim()) return;
+    if (!catalogName.trim()) {
+      onCreated('Catalog name is required', true);
+      return;
+    }
 
     const typedDrafts = draftRecipes.filter((r) => r.version.trim());
     if (typedDrafts.length === 0) {
@@ -505,6 +509,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
             placeholder="e.g. HPE Analytics Runtime"
             value={catalogName}
             onChange={(e) => setCatalogName(e.target.value)}
+            required
           />
         </div>
         <div>
