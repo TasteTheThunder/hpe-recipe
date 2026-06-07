@@ -1,0 +1,39 @@
+recipeData:
+  chartVersion: 0.0.5
+  releaseName: recipe-v0-0-5
+  catalog_name: HPE Analyitics Runtime
+  catalog_description: okkkkkk
+  release_date: '2026-06-08'
+  catalog_status: GA
+  maintainer: hpe team
+  recipes:
+  - version: 3.0.0
+    description: Initial monitoring and observability platform release
+    release_date: '2026-06-05'
+    status: GA
+    release_notes: Introduced Prometheus, Grafana, and Alert Manager for centralized
+      monitoring, dashboarding, and alert management.
+    components:
+      Alert-Manager:
+        version: 4.3.0
+        release_date: '2026-06-05'
+        upgrade_from:
+        - 4.2.0
+        upgrade_to:
+        - 4.4.0
+      Grafana:
+        version: 3.3.0
+        release_date: '2026-06-05'
+        upgrade_from:
+        - 3.2.0
+        upgrade_to:
+        - 3.4.0
+      Prometheus:
+        version: 2.3.0
+        release_date: '2026-06-05'
+        upgrade_from:
+        - 2.2.0
+        upgrade_to:
+        - 2.4.0
+    upgrade_to:
+    - 3.1.0
