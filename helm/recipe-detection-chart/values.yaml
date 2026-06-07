@@ -45,6 +45,7 @@ affinity: {}
 
 recipeData:
   chartVersion: "0.0.1"
+  releaseName: ""
   catalog_name: "HPE Analytics Runtime"
   catalog_description: "Enterprise analytics and streaming platform catalog"
   release_date: "2026-05-20"

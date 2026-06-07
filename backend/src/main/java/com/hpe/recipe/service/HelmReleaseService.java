@@ -143,8 +143,11 @@ public class HelmReleaseService {
 
             JsonNode root = objectMapper.readTree(json);
             String version = root.get("chartVersion").asText();
-            String releaseName = cm.getMetadata().getAnnotations()
+                String releaseName = root.has("releaseName") ? root.get("releaseName").asText() : "";
+                if (releaseName == null || releaseName.isBlank()) {
+                releaseName = cm.getMetadata().getAnnotations()
                     .getOrDefault(ANNOTATION_RELEASE_NAME, "unknown");
+                }
             String status = root.has("status") ? root.get("status").asText() : "deployed";
             String catalogName = root.has("catalog_name") ? root.get("catalog_name").asText() : "";
             String catalogDescription = root.has("catalog_description") ? root.get("catalog_description").asText() : "";
@@ -839,6 +842,9 @@ public class HelmReleaseService {
         try {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("chartVersion", release.getVersion());
+            if (release.getReleaseName() != null && !release.getReleaseName().isBlank()) {
+                data.put("releaseName", release.getReleaseName());
+            }
             data.put("status", release.getStatus());
             if (release.getCatalogName() != null && !release.getCatalogName().isBlank()) {
                 data.put("catalog_name", release.getCatalogName());

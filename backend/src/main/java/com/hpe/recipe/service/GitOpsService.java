@@ -194,6 +194,9 @@ public class GitOpsService {
 
         Map<String, Object> recipeData = new LinkedHashMap<>();
         recipeData.put("chartVersion", quote(release.getVersion()));
+        if (release.getReleaseName() != null && !release.getReleaseName().isBlank()) {
+            recipeData.put("releaseName", quote(release.getReleaseName()));
+        }
         if (release.getCatalogName() != null && !release.getCatalogName().isBlank()) {
             recipeData.put("catalog_name", quote(release.getCatalogName()));
         }

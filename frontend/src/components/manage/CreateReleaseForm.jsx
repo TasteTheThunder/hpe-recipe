@@ -145,7 +145,7 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
       const upgradeToFirst = upgradeToList.length > 0 ? upgradeToList[0] : '';
       if (!name || !version) return;
       if (!map[name]) {
-        map[name] = { sourceVersion: version, upgradeToFirst, releaseDate: spec?.release_date || '' };
+        map[name] = { sourceVersion: version, upgradeToFirst };
       }
     });
     return map;
@@ -171,16 +171,13 @@ export default function CreateReleaseForm({ cluster, onCreated }) {
         if (!existing.upgradeFromTouched) {
           existing.upgradeFrom = info.sourceVersion;
         }
-        if (!existing.releaseDate && info.releaseDate) {
-          existing.releaseDate = info.releaseDate;
-        }
         return;
       }
 
       nextComponents.push({
         name,
         version: info.upgradeToFirst || '',
-        releaseDate: info.releaseDate || '',
+        releaseDate: '',
         upgradeFrom: info.sourceVersion || '',
         upgradeTo: '',
         versionTouched: false,
